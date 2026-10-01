@@ -494,7 +494,7 @@
    <ItemSource>
     <TextEncoding>134217984</TextEncoding>
     <SourceLine>Sub Trace(message As String)</SourceLine>
-    <SourceLine>MessagesArea.Text = MessagesArea.Text + message + EndOfLine</SourceLine>
+    <SourceLine>AppLog(message)</SourceLine>
     <SourceLine>End Sub</SourceLine>
    </ItemSource>
   </HookInstance>
@@ -507,7 +507,7 @@
     <TextEncoding>134217984</TextEncoding>
     <SourceLine>Sub RawDataReceived(data As String)</SourceLine>
     <SourceLine>// options.hexdump in MQTT_Xojo.config.json</SourceLine>
-    <SourceLine>If AppHexDump() Then MessagesArea.Text = MessagesArea.Text + hexDump(data) + EndOfLine</SourceLine>
+    <SourceLine>If AppHexDump() Then AppLog(hexDump(data))</SourceLine>
     <SourceLine>End Sub</SourceLine>
    </ItemSource>
   </HookInstance>
@@ -519,7 +519,7 @@
    <ItemSource>
     <TextEncoding>134217984</TextEncoding>
     <SourceLine>Sub SocketError(err As RuntimeException)</SourceLine>
-    <SourceLine>MessagesArea.Text = MessagesArea.Text + "Socket error: " + err.Message + EndOfLine</SourceLine>
+    <SourceLine>AppLog("Socket error: " + err.Message)</SourceLine>
     <SourceLine>End Sub</SourceLine>
    </ItemSource>
   </HookInstance>
@@ -533,17 +533,17 @@
     <SourceLine>Sub MQTTConnected(sessionPresent As Boolean)</SourceLine>
     <SourceLine>For i As Integer = 0 To AppTopicCount() - 1</SourceLine>
     <SourceLine>Dim packetID As Integer = MQTTClient1.Subscribe(AppTopic(i))</SourceLine>
-    <SourceLine>MessagesArea.Text = MessagesArea.Text + "Connected. Subscribing to " + AppTopic(i) + " (packetID " + Str(packetID) + ")" + EndOfLine</SourceLine>
+    <SourceLine>AppLog("Connected. Subscribing to " + AppTopic(i) + " (packetID " + Str(packetID) + ")")</SourceLine>
     <SourceLine>Next</SourceLine>
-    <SourceLine>MessagesArea.Text = MessagesArea.Text + MeshCryptoSelfTest() + EndOfLine</SourceLine>
-    <SourceLine>MessagesArea.Text = MessagesArea.Text + MeshJSONSelfTest() + EndOfLine</SourceLine>
-    <SourceLine>MessagesArea.Text = MessagesArea.Text + MeshChannelList() + EndOfLine</SourceLine>
+    <SourceLine>AppLog(MeshCryptoSelfTest())</SourceLine>
+    <SourceLine>AppLog(MeshJSONSelfTest())</SourceLine>
+    <SourceLine>AppLog(MeshChannelList())</SourceLine>
     <SourceLine>SendBoxSetChannels // channel menu of the send row, Send enabled when the node can send</SourceLine>
     <SourceLine>// Downlink: announce the app's node on every configured channel, so the mesh shows its name</SourceLine>
     <SourceLine>If AppHasNode() Then</SourceLine>
-    <SourceLine>MessagesArea.Text = MessagesArea.Text + "Node " + AppNodeID() + " """ + AppNodeLongName() + """ (" + AppNodeShortName() + "): sending enabled" + EndOfLine</SourceLine>
-    <SourceLine>MessagesArea.Text = MessagesArea.Text + MeshPKISelfTest() + EndOfLine</SourceLine>
-    <SourceLine>MessagesArea.Text = MessagesArea.Text + MeshPKIStatus() + EndOfLine</SourceLine>
+    <SourceLine>AppLog("Node " + AppNodeID() + " """ + AppNodeLongName() + """ (" + AppNodeShortName() + "): sending enabled")</SourceLine>
+    <SourceLine>AppLog(MeshPKISelfTest())</SourceLine>
+    <SourceLine>AppLog(MeshPKIStatus())</SourceLine>
     <SourceLine>If AppNodeRoot() &lt;&gt; "" Then</SourceLine>
     <SourceLine>Dim userPayload As String = MeshNodeInfoPayload(AppNodeID(), AppNodeLongName(), AppNodeShortName())</SourceLine>
     <SourceLine>For c As Integer = 0 To MeshChannelCount() - 1</SourceLine>
@@ -552,9 +552,9 @@
     <SourceLine>If problem = "" Then</SourceLine>
     <SourceLine>Dim nodeInfoTopic As String = AppNodeRoot() + "/2/e/" + MeshChannelName(c) + "/" + AppNodeID()</SourceLine>
     <SourceLine>MQTTClient1.Publish(nodeInfoTopic, envelope)</SourceLine>
-    <SourceLine>MessagesArea.Text = MessagesArea.Text + "  NodeInfo -&gt; " + nodeInfoTopic + EndOfLine</SourceLine>
+    <SourceLine>AppLog("  NodeInfo -&gt; " + nodeInfoTopic)</SourceLine>
     <SourceLine>Else</SourceLine>
-    <SourceLine>MessagesArea.Text = MessagesArea.Text + "  NodeInfo on " + MeshChannelName(c) + " failed: " + problem + EndOfLine</SourceLine>
+    <SourceLine>AppLog("  NodeInfo on " + MeshChannelName(c) + " failed: " + problem)</SourceLine>
     <SourceLine>End If</SourceLine>
     <SourceLine>Next</SourceLine>
     <SourceLine>End If</SourceLine>
@@ -579,22 +579,22 @@
     <SourceLine>If summary &lt;&gt; "" Then</SourceLine>
     <SourceLine>// options.dedupe: a packet already seen (same sender and id) is neither shown nor republished</SourceLine>
     <SourceLine>If AppDedupe() And MeshSeenRecently(packetKey) Then Return</SourceLine>
-    <SourceLine>MessagesArea.Text = MessagesArea.Text + summary + EndOfLine</SourceLine>
+    <SourceLine>AppLog(summary)</SourceLine>
     <SourceLine>If jsonText &lt;&gt; "" And topic.IndexOf("/2/e/") &gt;= 0 Then</SourceLine>
     <SourceLine>Dim jsonTopic As String = topic.Replace("/2/e/", "/2/json/")</SourceLine>
     <SourceLine>MQTTClient1.Publish(jsonTopic, jsonText)</SourceLine>
-    <SourceLine>MessagesArea.Text = MessagesArea.Text + "  JSON -&gt; " + jsonTopic + ": " + jsonText + EndOfLine</SourceLine>
+    <SourceLine>AppLog("  JSON -&gt; " + jsonTopic + ": " + jsonText)</SourceLine>
     <SourceLine>End If</SourceLine>
     <SourceLine>Else</SourceLine>
-    <SourceLine>MessagesArea.Text = MessagesArea.Text + topic + ": " + payload + EndOfLine</SourceLine>
+    <SourceLine>AppLog(topic + ": " + payload)</SourceLine>
     <SourceLine>// Downlink: a "send..." JSON on .../2/json/&lt;channel&gt;/... becomes a protobuf packet on .../2/e/&lt;channel&gt;/&lt;node id&gt;</SourceLine>
     <SourceLine>If AppHasNode() And topic.IndexOf("/2/json/") &gt;= 0 Then</SourceLine>
     <SourceLine>Dim outTopic, outPayload, info As String</SourceLine>
     <SourceLine>If MeshDownlink(topic, payload, AppNodeNum(), AppNodeID(), outTopic, outPayload, info) Then</SourceLine>
     <SourceLine>MQTTClient1.Publish(outTopic, outPayload)</SourceLine>
-    <SourceLine>MessagesArea.Text = MessagesArea.Text + "  SEND -&gt; " + outTopic + ": " + info + EndOfLine</SourceLine>
+    <SourceLine>AppLog("  SEND -&gt; " + outTopic + ": " + info)</SourceLine>
     <SourceLine>ElseIf info &lt;&gt; "" Then</SourceLine>
-    <SourceLine>MessagesArea.Text = MessagesArea.Text + "  SEND failed: " + info + EndOfLine</SourceLine>
+    <SourceLine>AppLog("  SEND failed: " + info)</SourceLine>
     <SourceLine>End If</SourceLine>
     <SourceLine>End If</SourceLine>
     <SourceLine>End If</SourceLine>
@@ -618,10 +618,10 @@
     <SourceLine>// see MQTT_Xojo.config.example.json). It is read again at every connect</SourceLine>
     <SourceLine>Dim problem As String = AppLoadConfig()</SourceLine>
     <SourceLine>If problem &lt;&gt; "" Then</SourceLine>
-    <SourceLine>MessagesArea.Text = MessagesArea.Text + problem + EndOfLine</SourceLine>
+    <SourceLine>AppLog(problem)</SourceLine>
     <SourceLine>Return</SourceLine>
     <SourceLine>End If</SourceLine>
-    <SourceLine>MessagesArea.Text = MessagesArea.Text + "Configuration: " + AppConfigPath() + EndOfLine</SourceLine>
+    <SourceLine>AppLog("Configuration: " + AppConfigPath())</SourceLine>
     <SourceLine>MQTTClient1.SetCredentials(AppUsername(), AppPassword())</SourceLine>
     <SourceLine>MQTTClient1.Connect(AppHost(), AppPort(), AppClientID())</SourceLine>
     <SourceLine>End If</SourceLine>
@@ -659,7 +659,7 @@
     <SourceLine>// Saves the log where the user chooses (file name with date and time, header with the time span); the log stays</SourceLine>
     <SourceLine>Dim status As String</SourceLine>
     <SourceLine>status = AppSaveLog(MessagesArea.Text)</SourceLine>
-    <SourceLine>MessagesArea.Text = MessagesArea.Text + status + EndOfLine</SourceLine>
+    <SourceLine>AppLog(status)</SourceLine>
     <SourceLine></SourceLine>
     <SourceLine>End Sub</SourceLine>
    </ItemSource>
@@ -2150,7 +2150,7 @@
   <ItemName>hexDump</ItemName>
   <Compatibility></Compatibility>
   <Visible>1</Visible>
-  <PartID>2087393081</PartID>
+  <PartID>102532609</PartID>
   <ItemSource>
    <TextEncoding>134217984</TextEncoding>
    <SourceLine>Function hexDump(mb As MemoryBlock) As String</SourceLine>
@@ -2208,10 +2208,36 @@
   <ItemResult>String</ItemResult>
  </Method>
  <Method>
+  <ItemName>AppLog</ItemName>
+  <Compatibility></Compatibility>
+  <Visible>1</Visible>
+  <PartID>1524724635</PartID>
+  <ItemSource>
+   <TextEncoding>134217984</TextEncoding>
+   <SourceLine>Sub AppLog(message As String)</SourceLine>
+   <SourceLine>// Appends a line to the window's log. The view follows the newest line only when the user is already at</SourceLine>
+   <SourceLine>// the bottom, so scrolling up to read older lines isn't interrupted by new traffic</SourceLine>
+   <SourceLine>Dim area As DesktopTextArea = Window1.MessagesArea</SourceLine>
+   <SourceLine>Dim lastLine As Integer = area.LineNumber(area.Text.Length)</SourceLine>
+   <SourceLine>// the last visible line: the one at a point just inside the bottom-left corner of the control</SourceLine>
+   <SourceLine>Dim lastVisible As Integer = area.LineNumber(area.CharacterPosition(4, area.Height - 4))</SourceLine>
+   <SourceLine>Dim atBottom As Boolean = (lastVisible &gt;= lastLine - 1)</SourceLine>
+   <SourceLine>area.AddText(message + EndOfLine)</SourceLine>
+   <SourceLine>If atBottom Then area.VerticalScrollPosition = area.LineNumber(area.Text.Length)</SourceLine>
+   <SourceLine>End Sub</SourceLine>
+  </ItemSource>
+  <TextEncoding>134217984</TextEncoding>
+  <AliasName></AliasName>
+  <ItemFlags>0</ItemFlags>
+  <IsShared>0</IsShared>
+  <ItemParams>message As String</ItemParams>
+  <ItemResult></ItemResult>
+ </Method>
+ <Method>
   <ItemName>AppResetLogStart</ItemName>
   <Compatibility></Compatibility>
   <Visible>1</Visible>
-  <PartID>937091234</PartID>
+  <PartID>180667696</PartID>
   <ItemSource>
    <TextEncoding>134217984</TextEncoding>
    <SourceLine>Sub AppResetLogStart()</SourceLine>
@@ -2230,7 +2256,7 @@
   <ItemName>AppTimeStamp</ItemName>
   <Compatibility></Compatibility>
   <Visible>1</Visible>
-  <PartID>484191299</PartID>
+  <PartID>1287446253</PartID>
   <ItemSource>
    <TextEncoding>134217984</TextEncoding>
    <SourceLine>Function AppTimeStamp(d As DateTime) As String</SourceLine>
@@ -2255,7 +2281,7 @@
   <ItemName>AppSaveLog</ItemName>
   <Compatibility></Compatibility>
   <Visible>1</Visible>
-  <PartID>1455247260</PartID>
+  <PartID>633990136</PartID>
   <ItemSource>
    <TextEncoding>134217984</TextEncoding>
    <SourceLine>Function AppSaveLog(logText As String) As String</SourceLine>
@@ -2298,7 +2324,7 @@
   <ItemName>mLogStarted</ItemName>
   <Compatibility></Compatibility>
   <Visible>1</Visible>
-  <PartID>756440918</PartID>
+  <PartID>563154262</PartID>
   <ItemSource>
    <TextEncoding>134217984</TextEncoding>
    <SourceLine>mLogStarted As DateTime</SourceLine>
@@ -8419,11 +8445,71 @@
  <ItemFlags>1</ItemFlags>
  <IsInterface>0</IsInterface>
  <Compatibility></Compatibility>
+ <Property>
+  <ItemName>mToField</ItemName>
+  <Compatibility></Compatibility>
+  <Visible>1</Visible>
+  <PartID>1495707160</PartID>
+  <ItemSource>
+   <TextEncoding>134217984</TextEncoding>
+   <SourceLine>mToField As DesktopTextField</SourceLine>
+   <SourceLine></SourceLine>
+  </ItemSource>
+  <TextEncoding>134217984</TextEncoding>
+  <ItemDeclaration>mToField As DesktopTextField</ItemDeclaration>
+  <ItemFlags>33</ItemFlags>
+  <IsShared>0</IsShared>
+ </Property>
+ <Property>
+  <ItemName>mChannelMenu</ItemName>
+  <Compatibility></Compatibility>
+  <Visible>1</Visible>
+  <PartID>2089997803</PartID>
+  <ItemSource>
+   <TextEncoding>134217984</TextEncoding>
+   <SourceLine>mChannelMenu As DesktopPopupMenu</SourceLine>
+   <SourceLine></SourceLine>
+  </ItemSource>
+  <TextEncoding>134217984</TextEncoding>
+  <ItemDeclaration>mChannelMenu As DesktopPopupMenu</ItemDeclaration>
+  <ItemFlags>33</ItemFlags>
+  <IsShared>0</IsShared>
+ </Property>
+ <Property>
+  <ItemName>mMessageField</ItemName>
+  <Compatibility></Compatibility>
+  <Visible>1</Visible>
+  <PartID>845594643</PartID>
+  <ItemSource>
+   <TextEncoding>134217984</TextEncoding>
+   <SourceLine>mMessageField As DesktopTextField</SourceLine>
+   <SourceLine></SourceLine>
+  </ItemSource>
+  <TextEncoding>134217984</TextEncoding>
+  <ItemDeclaration>mMessageField As DesktopTextField</ItemDeclaration>
+  <ItemFlags>33</ItemFlags>
+  <IsShared>0</IsShared>
+ </Property>
+ <Property>
+  <ItemName>mSendButton</ItemName>
+  <Compatibility></Compatibility>
+  <Visible>1</Visible>
+  <PartID>341856361</PartID>
+  <ItemSource>
+   <TextEncoding>134217984</TextEncoding>
+   <SourceLine>mSendButton As DesktopButton</SourceLine>
+   <SourceLine></SourceLine>
+  </ItemSource>
+  <TextEncoding>134217984</TextEncoding>
+  <ItemDeclaration>mSendButton As DesktopButton</ItemDeclaration>
+  <ItemFlags>33</ItemFlags>
+  <IsShared>0</IsShared>
+ </Property>
  <Method>
   <ItemName>SendBoxCreate</ItemName>
   <Compatibility></Compatibility>
   <Visible>1</Visible>
-  <PartID>1823602632</PartID>
+  <PartID>936947773</PartID>
   <ItemSource>
    <TextEncoding>134217984</TextEncoding>
    <SourceLine>Sub SendBoxCreate(w As DesktopWindow, area As DesktopTextArea)</SourceLine>
@@ -8502,7 +8588,7 @@
   <ItemName>SendBoxSetChannels</ItemName>
   <Compatibility></Compatibility>
   <Visible>1</Visible>
-  <PartID>1902699160</PartID>
+  <PartID>1897299473</PartID>
   <ItemSource>
    <TextEncoding>134217984</TextEncoding>
    <SourceLine>Sub SendBoxSetChannels()</SourceLine>
@@ -8527,7 +8613,7 @@
   <ItemName>SendBoxPressed</ItemName>
   <Compatibility></Compatibility>
   <Visible>1</Visible>
-  <PartID>553108931</PartID>
+  <PartID>326024034</PartID>
   <ItemSource>
    <TextEncoding>134217984</TextEncoding>
    <SourceLine>Sub SendBoxPressed(sender As DesktopButton)</SourceLine>
@@ -8545,7 +8631,7 @@
   <ItemName>SendBoxKeyDown</ItemName>
   <Compatibility></Compatibility>
   <Visible>1</Visible>
-  <PartID>1075741271</PartID>
+  <PartID>871355861</PartID>
   <ItemSource>
    <TextEncoding>134217984</TextEncoding>
    <SourceLine>Function SendBoxKeyDown(sender As DesktopTextField, key As String) As Boolean</SourceLine>
@@ -8568,7 +8654,7 @@
   <ItemName>SendBoxSend</ItemName>
   <Compatibility></Compatibility>
   <Visible>1</Visible>
-  <PartID>1014899719</PartID>
+  <PartID>1608093887</PartID>
   <ItemSource>
    <TextEncoding>134217984</TextEncoding>
    <SourceLine>Sub SendBoxSend()</SourceLine>
@@ -8613,11 +8699,11 @@
   <ItemName>SendBoxReport</ItemName>
   <Compatibility></Compatibility>
   <Visible>1</Visible>
-  <PartID>581147631</PartID>
+  <PartID>499134099</PartID>
   <ItemSource>
    <TextEncoding>134217984</TextEncoding>
    <SourceLine>Sub SendBoxReport(message As String)</SourceLine>
-   <SourceLine>Window1.MessagesArea.Text = Window1.MessagesArea.Text + message + EndOfLine</SourceLine>
+   <SourceLine>AppLog(message)</SourceLine>
    <SourceLine>End Sub</SourceLine>
   </ItemSource>
   <TextEncoding>134217984</TextEncoding>
@@ -8627,66 +8713,6 @@
   <ItemParams>message As String</ItemParams>
   <ItemResult></ItemResult>
  </Method>
- <Property>
-  <ItemName>mToField</ItemName>
-  <Compatibility></Compatibility>
-  <Visible>1</Visible>
-  <PartID>856044575</PartID>
-  <ItemSource>
-   <TextEncoding>134217984</TextEncoding>
-   <SourceLine>mToField As DesktopTextField</SourceLine>
-   <SourceLine></SourceLine>
-  </ItemSource>
-  <TextEncoding>134217984</TextEncoding>
-  <ItemDeclaration>mToField As DesktopTextField</ItemDeclaration>
-  <ItemFlags>33</ItemFlags>
-  <IsShared>0</IsShared>
- </Property>
- <Property>
-  <ItemName>mChannelMenu</ItemName>
-  <Compatibility></Compatibility>
-  <Visible>1</Visible>
-  <PartID>1336639515</PartID>
-  <ItemSource>
-   <TextEncoding>134217984</TextEncoding>
-   <SourceLine>mChannelMenu As DesktopPopupMenu</SourceLine>
-   <SourceLine></SourceLine>
-  </ItemSource>
-  <TextEncoding>134217984</TextEncoding>
-  <ItemDeclaration>mChannelMenu As DesktopPopupMenu</ItemDeclaration>
-  <ItemFlags>33</ItemFlags>
-  <IsShared>0</IsShared>
- </Property>
- <Property>
-  <ItemName>mMessageField</ItemName>
-  <Compatibility></Compatibility>
-  <Visible>1</Visible>
-  <PartID>1034985889</PartID>
-  <ItemSource>
-   <TextEncoding>134217984</TextEncoding>
-   <SourceLine>mMessageField As DesktopTextField</SourceLine>
-   <SourceLine></SourceLine>
-  </ItemSource>
-  <TextEncoding>134217984</TextEncoding>
-  <ItemDeclaration>mMessageField As DesktopTextField</ItemDeclaration>
-  <ItemFlags>33</ItemFlags>
-  <IsShared>0</IsShared>
- </Property>
- <Property>
-  <ItemName>mSendButton</ItemName>
-  <Compatibility></Compatibility>
-  <Visible>1</Visible>
-  <PartID>1717717542</PartID>
-  <ItemSource>
-   <TextEncoding>134217984</TextEncoding>
-   <SourceLine>mSendButton As DesktopButton</SourceLine>
-   <SourceLine></SourceLine>
-  </ItemSource>
-  <TextEncoding>134217984</TextEncoding>
-  <ItemDeclaration>mSendButton As DesktopButton</ItemDeclaration>
-  <ItemFlags>33</ItemFlags>
-  <IsShared>0</IsShared>
- </Property>
  <ViewBehavior>
   <ViewProperty>
    <ObjName>Name</ObjName>
