@@ -86,7 +86,7 @@ Begin DesktopWindow Window1
       Scope           =   0
       SSLConnected    =   False
       SSLConnecting   =   False
-      SSLConnectionType=   6
+      SSLConnectionType=   5
       SSLEnabled      =   False
       TabPanelIndex   =   "0"
    End

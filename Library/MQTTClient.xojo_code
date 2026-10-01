@@ -818,7 +818,7 @@ Inherits SSLSocket
 			Name="SSLConnectionType"
 			Visible=true
 			Group="Behavior"
-			InitialValue="6"
+			InitialValue="5"
 			Type="SSLConnectionTypes"
 			EditorType="Enum"
 			#tag EnumValues
