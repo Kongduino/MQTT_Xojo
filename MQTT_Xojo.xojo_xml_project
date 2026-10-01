@@ -487,6 +487,48 @@
  <ControlBehavior>
   <Superclass>MQTTClient</Superclass>
   <HookInstance>
+   <ItemName>MQTTDisconnected</ItemName>
+   <Compatibility></Compatibility>
+   <Visible>1</Visible>
+   <PartID>1219602379</PartID>
+   <ItemSource>
+    <TextEncoding>134217984</TextEncoding>
+    <SourceLine>Sub MQTTDisconnected()</SourceLine>
+    <SourceLine>AppLog("Disconnected from the broker")</SourceLine>
+    <SourceLine>AppSetConnectButton(False)</SourceLine>
+    <SourceLine>End Sub</SourceLine>
+   </ItemSource>
+  </HookInstance>
+  <HookInstance>
+   <ItemName>MQTTConnectionRefused</ItemName>
+   <Compatibility></Compatibility>
+   <Visible>1</Visible>
+   <PartID>2042051007</PartID>
+   <ItemSource>
+    <TextEncoding>134217984</TextEncoding>
+    <SourceLine>Sub MQTTConnectionRefused(reasonCode As Integer)</SourceLine>
+    <SourceLine>// CONNACK return codes of MQTT 3.1.1</SourceLine>
+    <SourceLine>Dim reason As String</SourceLine>
+    <SourceLine>Select Case reasonCode</SourceLine>
+    <SourceLine>Case 1</SourceLine>
+    <SourceLine>reason = "unacceptable protocol version"</SourceLine>
+    <SourceLine>Case 2</SourceLine>
+    <SourceLine>reason = "client identifier rejected"</SourceLine>
+    <SourceLine>Case 3</SourceLine>
+    <SourceLine>reason = "server unavailable"</SourceLine>
+    <SourceLine>Case 4</SourceLine>
+    <SourceLine>reason = "bad username or password"</SourceLine>
+    <SourceLine>Case 5</SourceLine>
+    <SourceLine>reason = "not authorized"</SourceLine>
+    <SourceLine>Else</SourceLine>
+    <SourceLine>reason = "unknown reason"</SourceLine>
+    <SourceLine>End Select</SourceLine>
+    <SourceLine>AppLog("The broker refused the connection: " + reason + " (code " + Str(reasonCode) + ")")</SourceLine>
+    <SourceLine>AppSetConnectButton(False)</SourceLine>
+    <SourceLine>End Sub</SourceLine>
+   </ItemSource>
+  </HookInstance>
+  <HookInstance>
    <ItemName>Trace</ItemName>
    <Compatibility></Compatibility>
    <Visible>1</Visible>
@@ -524,6 +566,7 @@
     <SourceLine>If err.ErrorNumber = 303 Then message = "TLS handshake failed (the server refused the secure connection, or doesn't speak TLS on this port)"</SourceLine>
     <SourceLine>If message = "" Then message = "(no message)"</SourceLine>
     <SourceLine>AppLog("Socket error " + Str(err.ErrorNumber) + ": " + message)</SourceLine>
+    <SourceLine>AppSetConnectButton(False)</SourceLine>
     <SourceLine>End Sub</SourceLine>
    </ItemSource>
   </HookInstance>
@@ -617,7 +660,13 @@
    <ItemSource>
     <TextEncoding>134217984</TextEncoding>
     <SourceLine>Sub Pressed()</SourceLine>
-    <SourceLine>If Not MQTTClient1.IsMQTTConnected Then</SourceLine>
+    <SourceLine>// Connect / Disconnect toggle: the caption shows what a click does</SourceLine>
+    <SourceLine>If Me.Caption = "Disconnect" Then</SourceLine>
+    <SourceLine>MQTTClient1.Disconnect</SourceLine>
+    <SourceLine>AppLog("Disconnected")</SourceLine>
+    <SourceLine>AppSetConnectButton(False)</SourceLine>
+    <SourceLine>Return</SourceLine>
+    <SourceLine>End If</SourceLine>
     <SourceLine>// Broker, topics and channel keys come from MQTT_Xojo.config.json (not in the repository,</SourceLine>
     <SourceLine>// see MQTT_Xojo.config.example.json). It is read again at every connect</SourceLine>
     <SourceLine>Dim problem As String = AppLoadConfig()</SourceLine>
@@ -630,8 +679,8 @@
     <SourceLine>MQTTClient1.SetTLS(AppTLS(), AppTLSConnectionType())</SourceLine>
     <SourceLine>If AppTLS() Then AppLog("Note: the broker's certificate is not verified (Xojo SSLSocket limitation): TLS protects against eavesdropping, not against impersonation")</SourceLine>
     <SourceLine>MQTTClient1.SetCredentials(AppUsername(), AppPassword())</SourceLine>
+    <SourceLine>AppSetConnectButton(True) // back to "Connect" when the connection ends (SocketError, MQTTDisconnected, MQTTConnectionRefused)</SourceLine>
     <SourceLine>MQTTClient1.Connect(AppHost(), AppPort(), AppClientID())</SourceLine>
-    <SourceLine>End If</SourceLine>
     <SourceLine>End Sub</SourceLine>
    </ItemSource>
   </HookInstance>
@@ -1413,6 +1462,7 @@
    <SourceLine>RaiseEvent Trace("The server did not answer with an MQTT CONNACK (got packet type " + Str(packetType) + ", " + Str(body.Bytes) + " bytes): is it an MQTT broker? Disconnecting")</SourceLine>
    <SourceLine>mRxBuffer = ""</SourceLine>
    <SourceLine>Disconnect</SourceLine>
+   <SourceLine>RaiseEvent MQTTDisconnected</SourceLine>
    <SourceLine>Return</SourceLine>
    <SourceLine>End If</SourceLine>
    <SourceLine>Select Case packetType</SourceLine>
@@ -2274,6 +2324,29 @@
   <ItemFlags>0</ItemFlags>
   <IsShared>0</IsShared>
   <ItemParams>message As String</ItemParams>
+  <ItemResult></ItemResult>
+ </Method>
+ <Method>
+  <ItemName>AppSetConnectButton</ItemName>
+  <Compatibility></Compatibility>
+  <Visible>1</Visible>
+  <PartID>808502596</PartID>
+  <ItemSource>
+   <TextEncoding>134217984</TextEncoding>
+   <SourceLine>Sub AppSetConnectButton(active As Boolean)</SourceLine>
+   <SourceLine>// The connect button toggles: "Disconnect" while connecting or connected, "Connect" once the connection has ended</SourceLine>
+   <SourceLine>If active Then</SourceLine>
+   <SourceLine>Window1.btConnect.Caption = "Disconnect"</SourceLine>
+   <SourceLine>Else</SourceLine>
+   <SourceLine>Window1.btConnect.Caption = "Connect"</SourceLine>
+   <SourceLine>End If</SourceLine>
+   <SourceLine>End Sub</SourceLine>
+  </ItemSource>
+  <TextEncoding>134217984</TextEncoding>
+  <AliasName></AliasName>
+  <ItemFlags>0</ItemFlags>
+  <IsShared>0</IsShared>
+  <ItemParams>active As Boolean</ItemParams>
   <ItemResult></ItemResult>
  </Method>
  <Method>

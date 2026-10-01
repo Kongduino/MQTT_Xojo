@@ -47,7 +47,7 @@ Repository: <https://github.com/Kongduino/MQTT_Xojo>
 - **PKI direct messages:** X25519 in pure Xojo (a TweetNaCl port, RFC 7748 vectors), AES-256-CCM built on Xojo's AES, and the firmware's PKI nonce and key derivation. Recipients' public keys come from the config or are learned from NodeInfo packets. PKI messages to or from the virtual node are decrypted for display, but never republished as JSON.
 - **Example app:**
   - one line per packet, and the JSON republished
-  - a Send row (To, channel, message)
+  - a **Connect / Disconnect** button, and a Send row (To, channel, message)
   - **Clear**, and **Save logs**: saves the log to a file you choose, named with the date and time, with a header giving the span it covers (since the window opened or the last Clear)
   - duplicate filtering and an optional hex dump
   - all settings in an external JSON file that stays out of the repository
@@ -154,6 +154,7 @@ These rules come from the firmware's `MQTT.cpp` and `Router.cpp`. Each one silen
 | You see | What it means |
 |---|---|
 | `MQTT_Xojo.config.json not found …` | The config isn't next to the app or in its parent folders. Copy the example file next to the project. |
+| `The broker refused the connection: … (code N)` | The broker rejected the login. Code 5 (not authorized) or 4 (bad username or password): check `username` / `password` and the broker's access rules. |
 | `Socket error 303: TLS handshake failed …` | `tls` is on, but the server refused the secure connection or doesn't speak TLS on that port (check the port: usually 8883 for TLS). |
 | `The server did not answer with an MQTT CONNACK …` | Something answered on that host and port, but it isn't an MQTT broker (e.g. a web server). |
 | `Invalid JSON …`, `Incomplete configuration …`, `Invalid PSK for channel(s) …` | The message names the file and what's wrong in it. |
