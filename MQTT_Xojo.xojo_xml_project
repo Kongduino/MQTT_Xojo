@@ -479,6 +479,7 @@
     <SourceLine>Sub Opening()</SourceLine>
     <SourceLine>// The send row (To, channel, message, Send) is created in code under this area</SourceLine>
     <SourceLine>SendBoxCreate(Self, Me)</SourceLine>
+    <SourceLine>AppResetLogStart</SourceLine>
     <SourceLine>End Sub</SourceLine>
    </ItemSource>
   </HookInstance>
@@ -628,6 +629,42 @@
    </ItemSource>
   </HookInstance>
  </ControlBehavior>
+ <ControlBehavior>
+  <Superclass>DesktopButton</Superclass>
+  <HookInstance>
+   <ItemName>Pressed</ItemName>
+   <Compatibility></Compatibility>
+   <Visible>1</Visible>
+   <PartID>374945791</PartID>
+   <ItemSource>
+    <TextEncoding>134217984</TextEncoding>
+    <SourceLine>Sub Pressed()</SourceLine>
+    <SourceLine>MessagesArea.Text = ""</SourceLine>
+    <SourceLine>AppResetLogStart // the next saved log starts now</SourceLine>
+    <SourceLine></SourceLine>
+    <SourceLine>End Sub</SourceLine>
+   </ItemSource>
+  </HookInstance>
+ </ControlBehavior>
+ <ControlBehavior>
+  <Superclass>DesktopButton</Superclass>
+  <HookInstance>
+   <ItemName>Pressed</ItemName>
+   <Compatibility></Compatibility>
+   <Visible>1</Visible>
+   <PartID>1151989759</PartID>
+   <ItemSource>
+    <TextEncoding>134217984</TextEncoding>
+    <SourceLine>Sub Pressed()</SourceLine>
+    <SourceLine>// Saves the log where the user chooses (file name with date and time, header with the time span); the log stays</SourceLine>
+    <SourceLine>Dim status As String</SourceLine>
+    <SourceLine>status = AppSaveLog(MessagesArea.Text)</SourceLine>
+    <SourceLine>MessagesArea.Text = MessagesArea.Text + status + EndOfLine</SourceLine>
+    <SourceLine></SourceLine>
+    <SourceLine>End Sub</SourceLine>
+   </ItemSource>
+  </HookInstance>
+ </ControlBehavior>
  <Control>
   <ControlClass>DesktopTextArea</ControlClass>
   <ItemName>DesktopTextArea</ItemName>
@@ -718,7 +755,7 @@
   <PropertyVal Name="LockRight">False</PropertyVal>
   <PropertyVal Name="LockTop">True</PropertyVal>
   <PropertyVal Name="MacButtonStyle">0</PropertyVal>
-  <PropertyVal Name="Name">Button1</PropertyVal>
+  <PropertyVal Name="Name">btConnect</PropertyVal>
   <PropertyVal Name="Scope">0</PropertyVal>
   <PropertyVal Name="Super">DesktopButton</PropertyVal>
   <PropertyVal Name="TabIndex">1</PropertyVal>
@@ -733,6 +770,81 @@
   <ControlIndex>2</ControlIndex>
   <Locked>0</Locked>
   <PartID>1198235647</PartID>
+ </Control>
+ <Control>
+  <ControlClass>DesktopButton</ControlClass>
+  <ItemName>DesktopButton</ItemName>
+  <PropertyVal Name="AllowAutoDeactivate">True</PropertyVal>
+  <PropertyVal Name="Bold">False</PropertyVal>
+  <PropertyVal Name="Cancel">False</PropertyVal>
+  <PropertyVal Name="Caption">Clear</PropertyVal>
+  <PropertyVal Name="Default">False</PropertyVal>
+  <PropertyVal Name="Enabled">True</PropertyVal>
+  <PropertyVal Name="FontName">System</PropertyVal>
+  <PropertyVal Name="FontSize">0.0</PropertyVal>
+  <PropertyVal Name="FontUnit">0</PropertyVal>
+  <PropertyVal Name="Height">28</PropertyVal>
+  <PropertyVal Name="Index">-2147483648</PropertyVal>
+  <PropertyVal Name="InitialParent"></PropertyVal>
+  <PropertyVal Name="Italic">False</PropertyVal>
+  <PropertyVal Name="Left">117</PropertyVal>
+  <PropertyVal Name="LockBottom">False</PropertyVal>
+  <PropertyVal Name="LockLeft">True</PropertyVal>
+  <PropertyVal Name="LockRight">False</PropertyVal>
+  <PropertyVal Name="LockTop">True</PropertyVal>
+  <PropertyVal Name="MacButtonStyle">0</PropertyVal>
+  <PropertyVal Name="Name">btClear</PropertyVal>
+  <PropertyVal Name="Scope">0</PropertyVal>
+  <PropertyVal Name="Super">DesktopButton</PropertyVal>
+  <PropertyVal Name="TabIndex">2</PropertyVal>
+  <PropertyVal Name="TabPanelIndex">0</PropertyVal>
+  <PropertyVal Name="TabStop">True</PropertyVal>
+  <PropertyVal Name="Tooltip"></PropertyVal>
+  <PropertyVal Name="Top">20</PropertyVal>
+  <PropertyVal Name="Transparent">False</PropertyVal>
+  <PropertyVal Name="Underline">False</PropertyVal>
+  <PropertyVal Name="Visible">True</PropertyVal>
+  <PropertyVal Name="Width">89</PropertyVal>
+  <ControlIndex>3</ControlIndex>
+  <Locked>0</Locked>
+  <PartID>303632383</PartID>
+ </Control>
+ <Control>
+  <ControlClass>DesktopButton</ControlClass>
+  <ItemName>DesktopButton</ItemName>
+  <PropertyVal Name="AllowAutoDeactivate">True</PropertyVal>
+  <PropertyVal Name="Bold">False</PropertyVal>
+  <PropertyVal Name="Cancel">False</PropertyVal>
+  <PropertyVal Name="Caption">Save logs</PropertyVal>
+  <PropertyVal Name="Default">False</PropertyVal>
+  <PropertyVal Name="Enabled">True</PropertyVal>
+  <PropertyVal Name="FontName">System</PropertyVal>
+  <PropertyVal Name="FontSize">0.0</PropertyVal>
+  <PropertyVal Name="FontUnit">0</PropertyVal>
+  <PropertyVal Name="Height">28</PropertyVal>
+  <PropertyVal Name="Index">-2147483648</PropertyVal>
+  <PropertyVal Name="Italic">False</PropertyVal>
+  <PropertyVal Name="Left">218</PropertyVal>
+  <PropertyVal Name="LockBottom">False</PropertyVal>
+  <PropertyVal Name="LockLeft">True</PropertyVal>
+  <PropertyVal Name="LockRight">False</PropertyVal>
+  <PropertyVal Name="LockTop">True</PropertyVal>
+  <PropertyVal Name="MacButtonStyle">0</PropertyVal>
+  <PropertyVal Name="Name">btSave</PropertyVal>
+  <PropertyVal Name="Scope">0</PropertyVal>
+  <PropertyVal Name="Super">DesktopButton</PropertyVal>
+  <PropertyVal Name="TabIndex">3</PropertyVal>
+  <PropertyVal Name="TabPanelIndex">0</PropertyVal>
+  <PropertyVal Name="TabStop">True</PropertyVal>
+  <PropertyVal Name="Tooltip"></PropertyVal>
+  <PropertyVal Name="Top">20</PropertyVal>
+  <PropertyVal Name="Transparent">False</PropertyVal>
+  <PropertyVal Name="Underline">False</PropertyVal>
+  <PropertyVal Name="Visible">True</PropertyVal>
+  <PropertyVal Name="Width">89</PropertyVal>
+  <ControlIndex>4</ControlIndex>
+  <Locked>0</Locked>
+  <PartID>611225599</PartID>
  </Control>
 </block>
 <block type="Menu" ID="1872400383">
@@ -2038,7 +2150,7 @@
   <ItemName>hexDump</ItemName>
   <Compatibility></Compatibility>
   <Visible>1</Visible>
-  <PartID>637790207</PartID>
+  <PartID>2087393081</PartID>
   <ItemSource>
    <TextEncoding>134217984</TextEncoding>
    <SourceLine>Function hexDump(mb As MemoryBlock) As String</SourceLine>
@@ -2095,6 +2207,108 @@
   <ItemParams>mb As MemoryBlock</ItemParams>
   <ItemResult>String</ItemResult>
  </Method>
+ <Method>
+  <ItemName>AppResetLogStart</ItemName>
+  <Compatibility></Compatibility>
+  <Visible>1</Visible>
+  <PartID>937091234</PartID>
+  <ItemSource>
+   <TextEncoding>134217984</TextEncoding>
+   <SourceLine>Sub AppResetLogStart()</SourceLine>
+   <SourceLine>// The log in the window starts (again) now: at app start, Clear and Save</SourceLine>
+   <SourceLine>mLogStarted = DateTime.Now</SourceLine>
+   <SourceLine>End Sub</SourceLine>
+  </ItemSource>
+  <TextEncoding>134217984</TextEncoding>
+  <AliasName></AliasName>
+  <ItemFlags>0</ItemFlags>
+  <IsShared>0</IsShared>
+  <ItemParams></ItemParams>
+  <ItemResult></ItemResult>
+ </Method>
+ <Method>
+  <ItemName>AppTimeStamp</ItemName>
+  <Compatibility></Compatibility>
+  <Visible>1</Visible>
+  <PartID>484191299</PartID>
+  <ItemSource>
+   <TextEncoding>134217984</TextEncoding>
+   <SourceLine>Function AppTimeStamp(d As DateTime) As String</SourceLine>
+   <SourceLine>// "2026-10-01 20:15:32 UTC+08:00": local time with its offset, so saved logs stay unambiguous</SourceLine>
+   <SourceLine>Dim offset As Integer = d.Timezone.SecondsFromGMT</SourceLine>
+   <SourceLine>Dim sign As String = "+"</SourceLine>
+   <SourceLine>If offset &lt; 0 Then sign = "-"</SourceLine>
+   <SourceLine>Dim minutes As Integer = Abs(offset) \ 60</SourceLine>
+   <SourceLine>Dim hh As String = "0" + Str(minutes \ 60)</SourceLine>
+   <SourceLine>Dim mm As String = "0" + Str(minutes Mod 60)</SourceLine>
+   <SourceLine>Return d.SQLDateTime + " UTC" + sign + hh.Right(2) + ":" + mm.Right(2)</SourceLine>
+   <SourceLine>End Function</SourceLine>
+  </ItemSource>
+  <TextEncoding>134217984</TextEncoding>
+  <AliasName></AliasName>
+  <ItemFlags>0</ItemFlags>
+  <IsShared>0</IsShared>
+  <ItemParams>d As DateTime</ItemParams>
+  <ItemResult>String</ItemResult>
+ </Method>
+ <Method>
+  <ItemName>AppSaveLog</ItemName>
+  <Compatibility></Compatibility>
+  <Visible>1</Visible>
+  <PartID>1455247260</PartID>
+  <ItemSource>
+   <TextEncoding>134217984</TextEncoding>
+   <SourceLine>Function AppSaveLog(logText As String) As String</SourceLine>
+   <SourceLine>// Asks where to save the log (default name with the date and time) and writes it with a header giving the</SourceLine>
+   <SourceLine>// time span it covers (since the window opened or the last Clear). Returns the status line to show</SourceLine>
+   <SourceLine>Dim savedAt As DateTime = DateTime.Now</SourceLine>
+   <SourceLine>If mLogStarted = Nil Then mLogStarted = savedAt</SourceLine>
+   <SourceLine>Dim stamp As String = savedAt.SQLDateTime</SourceLine>
+   <SourceLine>stamp = stamp.ReplaceAll(":", "-")</SourceLine>
+   <SourceLine>Dim f As FolderItem = FolderItem.ShowSaveFileDialog("", "MQTT_Xojo log " + stamp + ".txt")</SourceLine>
+   <SourceLine>If f = Nil Then Return "Save cancelled"</SourceLine>
+   <SourceLine>Dim header() As String</SourceLine>
+   <SourceLine>header.Add("MQTT_Xojo log")</SourceLine>
+   <SourceLine>header.Add("Log started: " + AppTimeStamp(mLogStarted))</SourceLine>
+   <SourceLine>header.Add("Log saved:   " + AppTimeStamp(savedAt))</SourceLine>
+   <SourceLine>If AppConfigPath() &lt;&gt; "" Then header.Add("Configuration: " + AppConfigPath())</SourceLine>
+   <SourceLine>If AppHost() &lt;&gt; "" Then header.Add("Broker: " + AppHost() + ":" + Str(AppPort()))</SourceLine>
+   <SourceLine>header.Add("----------------------------------------------------------------")</SourceLine>
+   <SourceLine>Dim body As String = logText.ReplaceLineEndings(EndOfLine)</SourceLine>
+   <SourceLine>Try</SourceLine>
+   <SourceLine>Dim stream As TextOutputStream = TextOutputStream.Create(f)</SourceLine>
+   <SourceLine>stream.Encoding = Encodings.UTF8</SourceLine>
+   <SourceLine>stream.Write(String.FromArray(header, EndOfLine) + EndOfLine + body)</SourceLine>
+   <SourceLine>stream.Close</SourceLine>
+   <SourceLine>Catch err As IOException</SourceLine>
+   <SourceLine>Return "Could not save the log to " + f.NativePath + ": " + err.Message</SourceLine>
+   <SourceLine>End Try</SourceLine>
+   <SourceLine>Return "Log saved to " + f.NativePath + " (" + AppTimeStamp(mLogStarted) + " to " + AppTimeStamp(savedAt) + ")"</SourceLine>
+   <SourceLine></SourceLine>
+   <SourceLine>End Function</SourceLine>
+  </ItemSource>
+  <TextEncoding>134217984</TextEncoding>
+  <AliasName></AliasName>
+  <ItemFlags>0</ItemFlags>
+  <IsShared>0</IsShared>
+  <ItemParams>logText As String</ItemParams>
+  <ItemResult>String</ItemResult>
+ </Method>
+ <Property>
+  <ItemName>mLogStarted</ItemName>
+  <Compatibility></Compatibility>
+  <Visible>1</Visible>
+  <PartID>756440918</PartID>
+  <ItemSource>
+   <TextEncoding>134217984</TextEncoding>
+   <SourceLine>mLogStarted As DateTime</SourceLine>
+   <SourceLine></SourceLine>
+  </ItemSource>
+  <TextEncoding>134217984</TextEncoding>
+  <ItemDeclaration>mLogStarted As DateTime</ItemDeclaration>
+  <ItemFlags>33</ItemFlags>
+  <IsShared>0</IsShared>
+ </Property>
  <ViewBehavior>
   <ViewProperty>
    <ObjName>Name</ObjName>
@@ -8533,9 +8747,9 @@
    <EditorCount>1</EditorCount>
    <Editor>
     <EditorIndex>0</EditorIndex>
-    <EditorLocation>Window1.Controls.Button1</EditorLocation>
+    <EditorLocation>AppUtils.AppSaveLog</EditorLocation>
     <EditorPath></EditorPath>
-    <EditingPartID>2017372159</EditingPartID>
+    <EditingPartID>273549311</EditingPartID>
     <EditorPath></EditorPath>
    </Editor>
    <SelectedTab>0</SelectedTab>

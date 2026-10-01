@@ -1,0 +1,14 @@
+# Your broker credentials and channel keys: copy MQTT_Xojo.config.example.json to MQTT_Xojo.config.json
+MQTT_Xojo.config.json
+
+# Xojo builds and debug runs
+Builds - */
+*.debug.app/
+*.debug/
+
+# Saved app output used with the test tools
+results/
+result*.txt
+
+__pycache__/
+.DS_Store

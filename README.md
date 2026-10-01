@@ -48,6 +48,7 @@ Repository: <https://github.com/Kongduino/MQTT_Xojo>
 - **Example app:**
   - one line per packet, and the JSON republished
   - a Send row (To, channel, message)
+  - **Clear**, and **Save logs**: saves the log to a file you choose, named with the date and time, with a header giving the span it covers (since the window opened or the last Clear)
   - duplicate filtering and an optional hex dump
   - all settings in an external JSON file that stays out of the repository
 - **Self-tests at startup:** AES-128/256-CTR, JSON float formatting, X25519 and AES-CCM.
@@ -62,7 +63,7 @@ Repository: <https://github.com/Kongduino/MQTT_Xojo>
 
 1. Open `MQTT_Xojo.xojo_xml_project` in Xojo.
 2. Copy `MQTT_Xojo.config.example.json` to **`MQTT_Xojo.config.json`**, next to the project, and fill it in (see below). This file holds your password and keys, so `.gitignore` keeps it out of the repository.
-3. Run the app and click the button at the top left (captioned **OK**) to connect. The first lines confirm the setup:
+3. Run the app and click **Connect**. The first lines confirm the setup:
 
 ```
 Configuration: /path/to/MQTT_Xojo.config.json
@@ -221,7 +222,7 @@ testdata/                       test packets, the converter's reference JSON, an
 LICENSE                         GPL-3.0
 ```
 
-Inside the project, the example app is `Window1` (the window, with its MQTTClient1 instance and button), `AppConfig` (reads the config file), `SendBox` (the Send row, created in code) and `AppUtils` (hex dump). Everything else is the library.
+Inside the project, the example app is `Window1` (the window, with its MQTTClient1 instance and the Connect, Clear and Save logs buttons), `AppConfig` (reads the config file), `SendBox` (the Send row, created in code) and `AppUtils` (hex dump). Everything else is the library.
 
 ## Test tools (`testdata/`)
 
