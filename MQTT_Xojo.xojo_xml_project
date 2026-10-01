@@ -519,7 +519,11 @@
    <ItemSource>
     <TextEncoding>134217984</TextEncoding>
     <SourceLine>Sub SocketError(err As RuntimeException)</SourceLine>
-    <SourceLine>AppLog("Socket error: " + err.Message)</SourceLine>
+    <SourceLine>Dim message As String = err.Message</SourceLine>
+    <SourceLine>// 303 (undocumented): seen when the TLS handshake fails</SourceLine>
+    <SourceLine>If err.ErrorNumber = 303 Then message = "TLS handshake failed (the server refused the secure connection, or doesn't speak TLS on this port)"</SourceLine>
+    <SourceLine>If message = "" Then message = "(no message)"</SourceLine>
+    <SourceLine>AppLog("Socket error " + Str(err.ErrorNumber) + ": " + message)</SourceLine>
     <SourceLine>End Sub</SourceLine>
    </ItemSource>
   </HookInstance>
@@ -622,6 +626,9 @@
     <SourceLine>Return</SourceLine>
     <SourceLine>End If</SourceLine>
     <SourceLine>AppLog("Configuration: " + AppConfigPath())</SourceLine>
+    <SourceLine>AppLog("Broker: " + AppBrokerDescription())</SourceLine>
+    <SourceLine>MQTTClient1.SetTLS(AppTLS(), AppTLSConnectionType())</SourceLine>
+    <SourceLine>If AppTLS() Then AppLog("Note: the broker's certificate is not verified (Xojo SSLSocket limitation): TLS protects against eavesdropping, not against impersonation")</SourceLine>
     <SourceLine>MQTTClient1.SetCredentials(AppUsername(), AppPassword())</SourceLine>
     <SourceLine>MQTTClient1.Connect(AppHost(), AppPort(), AppClientID())</SourceLine>
     <SourceLine>End If</SourceLine>
@@ -1056,7 +1063,7 @@
  <ObjName>MQTTClient</ObjName>
  <ObjContainerID>0</ObjContainerID>
  <IsClass>1</IsClass>
- <Superclass>TCPSocket</Superclass>
+ <Superclass>SSLSocket</Superclass>
  <ItemFlags>1</ItemFlags>
  <IsInterface>0</IsInterface>
  <Compatibility></Compatibility>
@@ -1068,7 +1075,12 @@
   <ItemSource>
    <TextEncoding>134217984</TextEncoding>
    <SourceLine>Sub Connected()</SourceLine>
-   <SourceLine>RaiseEvent Trace("TCP connection open, sending CONNECT")</SourceLine>
+   <SourceLine>Dim how As String = "TCP connection open"</SourceLine>
+   <SourceLine>If Me.SSLEnabled Then</SourceLine>
+   <SourceLine>how = "TLS connection open"</SourceLine>
+   <SourceLine>If Not Me.SSLConnected Then how = how + " (TLS handshake still in progress)"</SourceLine>
+   <SourceLine>End If</SourceLine>
+   <SourceLine>RaiseEvent Trace(how + ", sending CONNECT")</SourceLine>
    <SourceLine>SendConnectPacket()</SourceLine>
    <SourceLine></SourceLine>
    <SourceLine>End Sub</SourceLine>
@@ -1181,6 +1193,29 @@
   <ItemFlags>0</ItemFlags>
   <IsShared>0</IsShared>
   <ItemParams></ItemParams>
+  <ItemResult></ItemResult>
+ </Method>
+ <Method>
+  <ItemName>SetTLS</ItemName>
+  <Compatibility></Compatibility>
+  <Visible>1</Visible>
+  <PartID>549204716</PartID>
+  <ItemSource>
+   <TextEncoding>134217984</TextEncoding>
+   <SourceLine>Sub SetTLS(enabled As Boolean, connectionType As SSLSocket.SSLConnectionTypes = SSLSocket.SSLConnectionTypes.TLSv12)</SourceLine>
+   <SourceLine>// MQTT over TLS (brokers usually listen on port 8883). Call before Connect.</SourceLine>
+   <SourceLine>// connectionType: TLSv12 (default), TLSv13, or SSLv23 to negotiate the best version both sides support.</SourceLine>
+   <SourceLine>// Limitation: Xojo's SSLSocket encrypts the connection but does not verify the broker's certificate</SourceLine>
+   <SourceLine>// (tested: a self-signed certificate is accepted), so TLS protects against eavesdropping, not impersonation</SourceLine>
+   <SourceLine>Me.SSLEnabled = enabled</SourceLine>
+   <SourceLine>Me.SSLConnectionType = connectionType</SourceLine>
+   <SourceLine>End Sub</SourceLine>
+  </ItemSource>
+  <TextEncoding>134217984</TextEncoding>
+  <AliasName></AliasName>
+  <ItemFlags>0</ItemFlags>
+  <IsShared>0</IsShared>
+  <ItemParams>enabled As Boolean, connectionType As SSLSocket.SSLConnectionTypes = SSLSocket.SSLConnectionTypes.TLSv12</ItemParams>
   <ItemResult></ItemResult>
  </Method>
  <Method>
@@ -1372,6 +1407,14 @@
   <ItemSource>
    <TextEncoding>134217984</TextEncoding>
    <SourceLine>Sub HandlePacket(packetType As Integer, pFlags As Integer, body As String)</SourceLine>
+   <SourceLine>// Until the broker has accepted the connection, only a CONNACK (2 bytes) is valid. Anything else means the</SourceLine>
+   <SourceLine>// server isn't an MQTT broker (e.g. a web server on that port), so stop instead of misreading its data</SourceLine>
+   <SourceLine>If Not mConnectedMQTT And (packetType &lt;&gt; 2 Or body.Bytes &lt;&gt; 2) Then</SourceLine>
+   <SourceLine>RaiseEvent Trace("The server did not answer with an MQTT CONNACK (got packet type " + Str(packetType) + ", " + Str(body.Bytes) + " bytes): is it an MQTT broker? Disconnecting")</SourceLine>
+   <SourceLine>mRxBuffer = ""</SourceLine>
+   <SourceLine>Disconnect</SourceLine>
+   <SourceLine>Return</SourceLine>
+   <SourceLine>End If</SourceLine>
    <SourceLine>Select Case packetType</SourceLine>
    <SourceLine>Case 2 // CONNACK</SourceLine>
    <SourceLine>HandleConnAck(body)</SourceLine>
@@ -7226,7 +7269,14 @@
    <SourceLine>Try</SourceLine>
    <SourceLine>Dim broker As JSONItem = JSONItem(config.Value("broker").ObjectValue)</SourceLine>
    <SourceLine>mHost = broker.Value("host").StringValue</SourceLine>
+   <SourceLine>// broker.tls: MQTT over TLS (port 8883 unless given); broker.tls_version: "1.2" (default), "1.3" or "auto"</SourceLine>
+   <SourceLine>mTLS = False</SourceLine>
+   <SourceLine>If broker.HasKey("tls") Then mTLS = broker.Value("tls").BooleanValue</SourceLine>
+   <SourceLine>mTLSVersion = "1.2"</SourceLine>
+   <SourceLine>If broker.HasKey("tls_version") Then mTLSVersion = broker.Value("tls_version").StringValue</SourceLine>
+   <SourceLine>If mTLSVersion &lt;&gt; "1.2" And mTLSVersion &lt;&gt; "1.3" And mTLSVersion &lt;&gt; "auto" Then Return "Invalid broker.tls_version """ + mTLSVersion + """ in " + mConfigPath + " (use ""1.2"", ""1.3"" or ""auto"")"</SourceLine>
    <SourceLine>mPort = 1883</SourceLine>
+   <SourceLine>If mTLS Then mPort = 8883</SourceLine>
    <SourceLine>If broker.HasKey("port") Then mPort = broker.Value("port").IntegerValue</SourceLine>
    <SourceLine>mUsername = ""</SourceLine>
    <SourceLine>If broker.HasKey("username") Then mUsername = broker.Value("username").StringValue</SourceLine>
@@ -7596,6 +7646,76 @@
   <ItemParams></ItemParams>
   <ItemResult>String</ItemResult>
  </Method>
+ <Method>
+  <ItemName>AppTLS</ItemName>
+  <Compatibility></Compatibility>
+  <Visible>1</Visible>
+  <PartID>506881186</PartID>
+  <ItemSource>
+   <TextEncoding>134217984</TextEncoding>
+   <SourceLine>Function AppTLS() As Boolean</SourceLine>
+   <SourceLine>// broker.tls: connect with TLS</SourceLine>
+   <SourceLine>Return mTLS</SourceLine>
+   <SourceLine>End Function</SourceLine>
+  </ItemSource>
+  <TextEncoding>134217984</TextEncoding>
+  <AliasName></AliasName>
+  <ItemFlags>0</ItemFlags>
+  <IsShared>0</IsShared>
+  <ItemParams></ItemParams>
+  <ItemResult>Boolean</ItemResult>
+ </Method>
+ <Method>
+  <ItemName>AppTLSConnectionType</ItemName>
+  <Compatibility></Compatibility>
+  <Visible>1</Visible>
+  <PartID>739165887</PartID>
+  <ItemSource>
+   <TextEncoding>134217984</TextEncoding>
+   <SourceLine>Function AppTLSConnectionType() As SSLSocket.SSLConnectionTypes</SourceLine>
+   <SourceLine>// broker.tls_version as the SSLSocket connection type. "auto" (SSLv23) negotiates the best version both sides support</SourceLine>
+   <SourceLine>Select Case mTLSVersion</SourceLine>
+   <SourceLine>Case "1.3"</SourceLine>
+   <SourceLine>Return SSLSocket.SSLConnectionTypes.TLSv13</SourceLine>
+   <SourceLine>Case "auto"</SourceLine>
+   <SourceLine>Return SSLSocket.SSLConnectionTypes.SSLv23</SourceLine>
+   <SourceLine>Else</SourceLine>
+   <SourceLine>Return SSLSocket.SSLConnectionTypes.TLSv12</SourceLine>
+   <SourceLine>End Select</SourceLine>
+   <SourceLine>End Function</SourceLine>
+  </ItemSource>
+  <TextEncoding>134217984</TextEncoding>
+  <AliasName></AliasName>
+  <ItemFlags>0</ItemFlags>
+  <IsShared>0</IsShared>
+  <ItemParams></ItemParams>
+  <ItemResult>SSLSocket.SSLConnectionTypes</ItemResult>
+ </Method>
+ <Method>
+  <ItemName>AppBrokerDescription</ItemName>
+  <Compatibility></Compatibility>
+  <Visible>1</Visible>
+  <PartID>1083595428</PartID>
+  <ItemSource>
+   <TextEncoding>134217984</TextEncoding>
+   <SourceLine>Function AppBrokerDescription() As String</SourceLine>
+   <SourceLine>// "host:port, TLS 1.2" or "host:port, plain TCP" for the log (never the credentials)</SourceLine>
+   <SourceLine>Dim d As String = mHost + ":" + Str(mPort)</SourceLine>
+   <SourceLine>If mTLS Then</SourceLine>
+   <SourceLine>d = d + ", TLS " + mTLSVersion</SourceLine>
+   <SourceLine>Else</SourceLine>
+   <SourceLine>d = d + ", plain TCP"</SourceLine>
+   <SourceLine>End If</SourceLine>
+   <SourceLine>Return d</SourceLine>
+   <SourceLine>End Function</SourceLine>
+  </ItemSource>
+  <TextEncoding>134217984</TextEncoding>
+  <AliasName></AliasName>
+  <ItemFlags>0</ItemFlags>
+  <IsShared>0</IsShared>
+  <ItemParams></ItemParams>
+  <ItemResult>String</ItemResult>
+ </Method>
  <Property>
   <ItemName>mConfigPath</ItemName>
   <Compatibility></Compatibility>
@@ -7638,6 +7758,36 @@
   </ItemSource>
   <TextEncoding>134217984</TextEncoding>
   <ItemDeclaration>mPort As Integer</ItemDeclaration>
+  <ItemFlags>33</ItemFlags>
+  <IsShared>0</IsShared>
+ </Property>
+ <Property>
+  <ItemName>mTLS</ItemName>
+  <Compatibility></Compatibility>
+  <Visible>1</Visible>
+  <PartID>462697522</PartID>
+  <ItemSource>
+   <TextEncoding>134217984</TextEncoding>
+   <SourceLine>mTLS As Boolean</SourceLine>
+   <SourceLine></SourceLine>
+  </ItemSource>
+  <TextEncoding>134217984</TextEncoding>
+  <ItemDeclaration>mTLS As Boolean</ItemDeclaration>
+  <ItemFlags>33</ItemFlags>
+  <IsShared>0</IsShared>
+ </Property>
+ <Property>
+  <ItemName>mTLSVersion</ItemName>
+  <Compatibility></Compatibility>
+  <Visible>1</Visible>
+  <PartID>1885113685</PartID>
+  <ItemSource>
+   <TextEncoding>134217984</TextEncoding>
+   <SourceLine>mTLSVersion As String</SourceLine>
+   <SourceLine></SourceLine>
+  </ItemSource>
+  <TextEncoding>134217984</TextEncoding>
+  <ItemDeclaration>mTLSVersion As String</ItemDeclaration>
   <ItemFlags>33</ItemFlags>
   <IsShared>0</IsShared>
  </Property>

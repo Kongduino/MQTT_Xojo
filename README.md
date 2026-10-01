@@ -39,7 +39,7 @@ Repository: <https://github.com/Kongduino/MQTT_Xojo>
 
 ## Features
 
-- **MQTT client** (`MQTTClient`, a `TCPSocket` subclass): CONNECT with username and password, keep-alive, SUBSCRIBE / UNSUBSCRIBE, incoming QoS 0/1/2, outgoing PUBLISH at QoS 0. It doesn't depend on any window: everything reaches your code through events.
+- **MQTT client** (`MQTTClient`, an `SSLSocket` subclass): CONNECT with username and password, optional **TLS 1.2 / 1.3** (encryption only, see [Limitations](#limitations)), keep-alive, SUBSCRIBE / UNSUBSCRIBE, incoming QoS 0/1/2, outgoing PUBLISH at QoS 0. It disconnects with a clear message if the server doesn't answer like an MQTT broker. It doesn't depend on any window: everything reaches your code through events.
 - **Protobuf reader and writer** (`ProtoReader`, `ProtoWriter`): varints including 10-byte negative int32, fixed32 / sfixed32, floats, strings, embedded messages, packed and unpacked repeated fields, and unknown-field skipping. Every read is bounds-checked, so garbage from a wrong key can't crash the parser.
 - **Channel encryption:** AES-128/256-CTR through Xojo's `Crypto` module, with the firmware's nonce. Keys are expanded from PSKs exactly as the firmware does it, and the right key is found by channel name and **channel hash**.
 - **Decoders:** text, position, nodeinfo, telemetry (device, environment, air quality, power, local stats, health, host), waypoint, neighbor info, traceroute, paxcounter, detection sensor and remote hardware. Hardware model and role names are included.
@@ -92,7 +92,7 @@ The app looks for `MQTT_Xojo.config.json` next to itself and in up to six parent
 
 ```json
 {
-  "broker":   { "host": "mqtt.example.com", "port": 1883, "username": "…", "password": "…", "client_id": "MQTT_Xojo" },
+  "broker":   { "host": "mqtt.example.com", "port": 1883, "tls": false, "username": "…", "password": "…", "client_id": "MQTT_Xojo" },
   "topics":   ["msh/EU_868/2/e/#", "msh/EU_868/2/json/#"],
   "channels": [ { "name": "LongFast", "psk": "AQ==" },
                 { "name": "MyChannel", "psk": "base64 PSK from the Meshtastic app" } ],
@@ -105,7 +105,7 @@ The app looks for `MQTT_Xojo.config.json` next to itself and in up to six parent
 
 | Key | Meaning |
 |---|---|
-| `broker` | Broker connection. `port` defaults to 1883, and username and password are optional. |
+| `broker` | Broker connection. Username and password are optional. `tls`: connect with TLS (default false). `tls_version`: `"1.2"` (default), `"1.3"`, or `"auto"` (negotiates the best version, but also allows outdated ones). `port` defaults to 8883 with TLS, 1883 without. |
 | `topics` | Subscriptions. Subscribe to `…/2/json/#` too if you want to send through JSON requests. |
 | `channels` | Channel **name as in the topic** (e.g. `LongFast`) and its PSK, as the Meshtastic app shows it (base64). `0x…`, plain hex, `base64:…`, `default` and `none` also work. Short keys are zero-padded like the firmware does. |
 | `options.dedupe` | Show and republish each packet (sender + id) only once per 10 minutes. Off by default, like the converter, which republishes every copy a gateway sends. |
@@ -154,6 +154,8 @@ These rules come from the firmware's `MQTT.cpp` and `Router.cpp`. Each one silen
 | You see | What it means |
 |---|---|
 | `MQTT_Xojo.config.json not found …` | The config isn't next to the app or in its parent folders. Copy the example file next to the project. |
+| `Socket error 303: TLS handshake failed …` | `tls` is on, but the server refused the secure connection or doesn't speak TLS on that port (check the port: usually 8883 for TLS). |
+| `The server did not answer with an MQTT CONNACK …` | Something answered on that host and port, but it isn't an MQTT broker (e.g. a web server). |
 | `Invalid JSON …`, `Incomplete configuration …`, `Invalid PSK for channel(s) …` | The message names the file and what's wrong in it. |
 | `encrypted (N bytes, channel hash H, no matching key)` | No configured channel has hash H. Compare H with the hashes in the `Channel "…"` lines at connect: a different hash means the name or the PSK doesn't match the node's channel. |
 | `PKI direct message (N bytes, needs the recipient's private key)` | A DM between two other nodes. Only the recipient can read it. |
@@ -178,7 +180,7 @@ Copy these into your project:
 | `MeshSend` | Downlink: envelopes, NodeInfo, JSON requests |
 
 `MQTTClient` methods:
-- `SetCredentials(user, password)`
+- `SetCredentials(user, password)` and `SetTLS(enabled, connectionType)`
 - `Connect(host, port, clientID, keepAliveSeconds, cleanSession)`
 - `Subscribe(topic, qos) As Integer` and `Unsubscribe(topic)`
 - `Publish(topic, payload, retain)`
@@ -250,7 +252,8 @@ A typical run:
 
 ## Limitations
 
-- MQTT: no TLS, outgoing publishes at QoS 0 only, and no automatic reconnect.
+- **TLS encrypts the connection but doesn't verify the broker's certificate.** Xojo's `SSLSocket` accepted a deliberately invalid certificate (self-signed.badssl.com) exactly like a valid one, and offers no way to check it. So TLS protects your password and traffic against eavesdropping, not against someone impersonating the broker. The app logs a note to that effect whenever TLS is on.
+- MQTT: outgoing publishes at QoS 0 only, and no automatic reconnect.
 - PKI DMs can only be read when they're to or from the virtual node, since only its private key is known.
 - JSON passthrough of text messages handles objects, arrays, numbers, `true`/`false`/`null`, but not a bare JSON string literal. A float inside such JSON that is smaller than about 0.01 with a full 53-bit mantissa falls back to Xojo's `ToString` instead of Python's exact formatting.
 - Compressed text (portnum 7) isn't decoded, and the official converter doesn't decode it either.

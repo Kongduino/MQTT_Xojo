@@ -12,3 +12,7 @@ result*.txt
 
 __pycache__/
 .DS_Store
+
+# Logs saved with the Save logs button (they contain your broker host and real traffic)
+saved_logs/
+MQTT_Xojo log *.txt
