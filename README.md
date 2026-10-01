@@ -39,7 +39,7 @@ Repository: <https://github.com/Kongduino/MQTT_Xojo>
 
 ## Features
 
-- **MQTT client** (`MQTTClient`, an `SSLSocket` subclass): CONNECT with username and password, optional **TLS 1.2 / 1.3** (encryption only, see [Limitations](#limitations)), keep-alive, SUBSCRIBE / UNSUBSCRIBE, incoming QoS 0/1/2, outgoing PUBLISH at QoS 0. It disconnects with a clear message if the server doesn't answer like an MQTT broker. It doesn't depend on any window: everything reaches your code through events.
+- **MQTT client** (`MQTTClient`, an `SSLSocket` subclass): CONNECT with username and password, optional **TLS 1.2 / 1.3** (encryption only, see [Limitations](#limitations)), keep-alive with a watchdog that notices silent network drops, **automatic reconnect** with back-off, SUBSCRIBE / UNSUBSCRIBE, incoming QoS 0/1/2, outgoing PUBLISH at QoS 0. It disconnects with a clear message if the server doesn't answer like an MQTT broker. It doesn't depend on any window: everything reaches your code through events.
 - **Protobuf reader and writer** (`ProtoReader`, `ProtoWriter`): varints including 10-byte negative int32, fixed32 / sfixed32, floats, strings, embedded messages, packed and unpacked repeated fields, and unknown-field skipping. Every read is bounds-checked, so garbage from a wrong key can't crash the parser.
 - **Channel encryption:** AES-128/256-CTR through Xojo's `Crypto` module, with the firmware's nonce. Keys are expanded from PSKs exactly as the firmware does it, and the right key is found by channel name and **channel hash**.
 - **Decoders:** text, position, nodeinfo, telemetry (device, environment, air quality, power, local stats, health, host), waypoint, neighbor info, traceroute, paxcounter, detection sensor and remote hardware. Hardware model and role names are included.
@@ -96,7 +96,7 @@ The app looks for `MQTT_Xojo.config.json` next to itself and in up to six parent
   "topics":   ["msh/EU_868/2/e/#", "msh/EU_868/2/json/#"],
   "channels": [ { "name": "LongFast", "psk": "AQ==" },
                 { "name": "MyChannel", "psk": "base64 PSK from the Meshtastic app" } ],
-  "options":  { "dedupe": true, "hexdump": false },
+  "options":  { "dedupe": true, "hexdump": false, "reconnect": true },
   "node":     { "id": "!00c0ffee", "long_name": "Xojo MQTT", "short_name": "XOJO",
                 "root": "msh/EU_868", "private_key": "base64, 32 bytes" },
   "public_keys": { "!aabbccdd": "base64 public key of a node you want to DM" }
@@ -110,6 +110,7 @@ The app looks for `MQTT_Xojo.config.json` next to itself and in up to six parent
 | `channels` | Channel **name as in the topic** (e.g. `LongFast`) and its PSK, as the Meshtastic app shows it (base64). `0x…`, plain hex, `base64:…`, `default` and `none` also work. Short keys are zero-padded like the firmware does. |
 | `options.dedupe` | Show and republish each packet (sender + id) only once per 10 minutes. Off by default, like the converter, which republishes every copy a gateway sends. |
 | `options.hexdump` | Hex dump of every raw MQTT read. Off by default. |
+| `options.reconnect` | Reconnect automatically when the connection is lost or the first attempt fails (default on). The back-off is 2, 4, 8 … up to `reconnect_max_delay` seconds (default 60), with ±20% jitter, giving up after `reconnect_give_up` seconds (default 900, i.e. 15 minutes). There are no retries after a refused login (except "server unavailable"), a failed TLS handshake, a server that isn't an MQTT broker, or a click on Disconnect. After a reconnect, the subscriptions are renewed and the NodeInfo is resent at most once an hour. |
 | `node` | Optional. **Enables sending.** `id` is the virtual node's number (pick one no real node uses), and `root` is the topic root for its NodeInfo and messages. |
 | `node.private_key` | Optional. Enables PKI direct messages. If it's missing, the app prints a fresh random key to paste in. **Never change it once nodes have seen it:** nodes pin the first public key they learn for a node and drop NodeInfo with a different one. |
 | `public_keys` | Recipients for PKI DMs. Keys are also learned automatically from NodeInfo packets the app sees. |
@@ -154,6 +155,8 @@ These rules come from the firmware's `MQTT.cpp` and `Router.cpp`. Each one silen
 | You see | What it means |
 |---|---|
 | `MQTT_Xojo.config.json not found …` | The config isn't next to the app or in its parent folders. Copy the example file next to the project. |
+| `Connection lost (…). Reconnecting in N s` / `Attempt K failed …` | The connection dropped and the app is retrying. Click **Disconnect** to stop. `error 49: network unavailable` means no usable network (e.g. Wi-Fi off). |
+| `Gave up reconnecting …` | No connection for `reconnect_give_up` seconds. Click **Connect** to start again. |
 | `The broker refused the connection: … (code N)` | The broker rejected the login. Code 5 (not authorized) or 4 (bad username or password): check `username` / `password` and the broker's access rules. |
 | `Socket error 303: TLS handshake failed …` | `tls` is on, but the server refused the secure connection or doesn't speak TLS on that port (check the port: usually 8883 for TLS). |
 | `The server did not answer with an MQTT CONNACK …` | Something answered on that host and port, but it isn't an MQTT broker (e.g. a web server). |
@@ -182,6 +185,8 @@ Copy these into your project:
 
 `MQTTClient` methods:
 - `SetCredentials(user, password)` and `SetTLS(enabled, connectionType)`
+- `SetAutoReconnect(enabled, maxDelaySeconds, giveUpAfterSeconds)` (off by default) and `IsReconnecting`
+- `ErrorDescription(err)`, a readable socket error
 - `Connect(host, port, clientID, keepAliveSeconds, cleanSession)`
 - `Subscribe(topic, qos) As Integer` and `Unsubscribe(topic)`
 - `Publish(topic, payload, retain)`
@@ -193,6 +198,7 @@ Events:
 - `MessageReceived(topic, payload, qos, retained)`
 - `Subscribed(packetID, grantedQoS())` and `Unsubscribed(packetID)`
 - `SocketError(err)`
+- `Reconnecting(attempt, delaySeconds, reason)` and `ReconnectFailed(reason)`
 - `Trace(message)` and `RawDataReceived(data)`
 
 A minimal Meshtastic receiver:
@@ -254,7 +260,7 @@ A typical run:
 ## Limitations
 
 - **TLS encrypts the connection but doesn't verify the broker's certificate.** Xojo's `SSLSocket` accepted a deliberately invalid certificate (self-signed.badssl.com) exactly like a valid one, and offers no way to check it. So TLS protects your password and traffic against eavesdropping, not against someone impersonating the broker. The app logs a note to that effect whenever TLS is on.
-- MQTT: outgoing publishes at QoS 0 only, and no automatic reconnect.
+- MQTT: outgoing publishes at QoS 0 only. Messages sent while disconnected aren't queued (`SEND failed: not connected`).
 - PKI DMs can only be read when they're to or from the virtual node, since only its private key is known.
 - JSON passthrough of text messages handles objects, arrays, numbers, `true`/`false`/`null`, but not a bare JSON string literal. A float inside such JSON that is smaller than about 0.01 with a full 53-bit mantissa falls back to Xojo's `ToString` instead of Python's exact formatting.
 - Compressed text (portnum 7) isn't decoded, and the official converter doesn't decode it either.

@@ -487,6 +487,41 @@
  <ControlBehavior>
   <Superclass>MQTTClient</Superclass>
   <HookInstance>
+   <ItemName>Reconnecting</ItemName>
+   <Compatibility></Compatibility>
+   <Visible>1</Visible>
+   <PartID>965675658</PartID>
+   <ItemSource>
+    <TextEncoding>134217984</TextEncoding>
+    <SourceLine>Sub Reconnecting(attempt As Integer, delaySeconds As Integer, reason As String)</SourceLine>
+    <SourceLine>// attempt is the number of the next try: the first line says what happened, the next ones that a retry failed</SourceLine>
+    <SourceLine>If attempt &lt;= 1 Then</SourceLine>
+    <SourceLine>If AppHasConnected() Then</SourceLine>
+    <SourceLine>AppLog("Connection lost (" + reason + "). Reconnecting in " + Str(delaySeconds) + " s (attempt 1)")</SourceLine>
+    <SourceLine>Else</SourceLine>
+    <SourceLine>AppLog("Connection failed (" + reason + "). Retrying in " + Str(delaySeconds) + " s (attempt 1)")</SourceLine>
+    <SourceLine>End If</SourceLine>
+    <SourceLine>Else</SourceLine>
+    <SourceLine>AppLog("Attempt " + Str(attempt - 1) + " failed (" + reason + "). Retrying in " + Str(delaySeconds) + " s (attempt " + Str(attempt) + ")")</SourceLine>
+    <SourceLine>End If</SourceLine>
+    <SourceLine>AppSetConnectButton(True) // a click stops the reconnection</SourceLine>
+    <SourceLine>End Sub</SourceLine>
+   </ItemSource>
+  </HookInstance>
+  <HookInstance>
+   <ItemName>ReconnectFailed</ItemName>
+   <Compatibility></Compatibility>
+   <Visible>1</Visible>
+   <PartID>1036717986</PartID>
+   <ItemSource>
+    <TextEncoding>134217984</TextEncoding>
+    <SourceLine>Sub ReconnectFailed(reason As String)</SourceLine>
+    <SourceLine>AppLog("Gave up reconnecting (last error: " + reason + "). Click Connect to try again")</SourceLine>
+    <SourceLine>AppSetConnectButton(False)</SourceLine>
+    <SourceLine>End Sub</SourceLine>
+   </ItemSource>
+  </HookInstance>
+  <HookInstance>
    <ItemName>MQTTDisconnected</ItemName>
    <Compatibility></Compatibility>
    <Visible>1</Visible>
@@ -494,6 +529,7 @@
    <ItemSource>
     <TextEncoding>134217984</TextEncoding>
     <SourceLine>Sub MQTTDisconnected()</SourceLine>
+    <SourceLine>If MQTTClient1.IsReconnecting Then Return // reported by the Reconnecting line</SourceLine>
     <SourceLine>AppLog("Disconnected from the broker")</SourceLine>
     <SourceLine>AppSetConnectButton(False)</SourceLine>
     <SourceLine>End Sub</SourceLine>
@@ -524,7 +560,7 @@
     <SourceLine>reason = "unknown reason"</SourceLine>
     <SourceLine>End Select</SourceLine>
     <SourceLine>AppLog("The broker refused the connection: " + reason + " (code " + Str(reasonCode) + ")")</SourceLine>
-    <SourceLine>AppSetConnectButton(False)</SourceLine>
+    <SourceLine>If Not MQTTClient1.IsReconnecting Then AppSetConnectButton(False)</SourceLine>
     <SourceLine>End Sub</SourceLine>
    </ItemSource>
   </HookInstance>
@@ -561,11 +597,9 @@
    <ItemSource>
     <TextEncoding>134217984</TextEncoding>
     <SourceLine>Sub SocketError(err As RuntimeException)</SourceLine>
-    <SourceLine>Dim message As String = err.Message</SourceLine>
-    <SourceLine>// 303 (undocumented): seen when the TLS handshake fails</SourceLine>
-    <SourceLine>If err.ErrorNumber = 303 Then message = "TLS handshake failed (the server refused the secure connection, or doesn't speak TLS on this port)"</SourceLine>
-    <SourceLine>If message = "" Then message = "(no message)"</SourceLine>
-    <SourceLine>AppLog("Socket error " + Str(err.ErrorNumber) + ": " + message)</SourceLine>
+    <SourceLine>// While a reconnection is pending, the Reconnecting line reports the error</SourceLine>
+    <SourceLine>If MQTTClient1.IsReconnecting Then Return</SourceLine>
+    <SourceLine>AppLog("Socket " + MQTTClient1.ErrorDescription(err))</SourceLine>
     <SourceLine>AppSetConnectButton(False)</SourceLine>
     <SourceLine>End Sub</SourceLine>
    </ItemSource>
@@ -578,20 +612,28 @@
    <ItemSource>
     <TextEncoding>134217984</TextEncoding>
     <SourceLine>Sub MQTTConnected(sessionPresent As Boolean)</SourceLine>
+    <SourceLine>// Every (re)connection subscribes again (clean session). The first one after a click on Connect</SourceLine>
+    <SourceLine>// also logs the self-tests and the setup; automatic reconnections only log "Reconnected"</SourceLine>
+    <SourceLine>Dim firstConnect As Boolean = AppTakeFirstConnect()</SourceLine>
+    <SourceLine>If Not firstConnect Then AppLog("Reconnected")</SourceLine>
     <SourceLine>For i As Integer = 0 To AppTopicCount() - 1</SourceLine>
     <SourceLine>Dim packetID As Integer = MQTTClient1.Subscribe(AppTopic(i))</SourceLine>
     <SourceLine>AppLog("Connected. Subscribing to " + AppTopic(i) + " (packetID " + Str(packetID) + ")")</SourceLine>
     <SourceLine>Next</SourceLine>
+    <SourceLine>If firstConnect Then</SourceLine>
     <SourceLine>AppLog(MeshCryptoSelfTest())</SourceLine>
     <SourceLine>AppLog(MeshJSONSelfTest())</SourceLine>
     <SourceLine>AppLog(MeshChannelList())</SourceLine>
     <SourceLine>SendBoxSetChannels // channel menu of the send row, Send enabled when the node can send</SourceLine>
-    <SourceLine>// Downlink: announce the app's node on every configured channel, so the mesh shows its name</SourceLine>
     <SourceLine>If AppHasNode() Then</SourceLine>
     <SourceLine>AppLog("Node " + AppNodeID() + " """ + AppNodeLongName() + """ (" + AppNodeShortName() + "): sending enabled")</SourceLine>
     <SourceLine>AppLog(MeshPKISelfTest())</SourceLine>
     <SourceLine>AppLog(MeshPKIStatus())</SourceLine>
-    <SourceLine>If AppNodeRoot() &lt;&gt; "" Then</SourceLine>
+    <SourceLine>End If</SourceLine>
+    <SourceLine>End If</SourceLine>
+    <SourceLine>// Downlink: announce the app's node on every configured channel, so the mesh shows its name:</SourceLine>
+    <SourceLine>// at the first connection of a session, then at most once an hour</SourceLine>
+    <SourceLine>If AppHasNode() And AppNodeRoot() &lt;&gt; "" And AppNodeInfoDue() Then</SourceLine>
     <SourceLine>Dim userPayload As String = MeshNodeInfoPayload(AppNodeID(), AppNodeLongName(), AppNodeShortName())</SourceLine>
     <SourceLine>For c As Integer = 0 To MeshChannelCount() - 1</SourceLine>
     <SourceLine>Dim envelope As String</SourceLine>
@@ -604,7 +646,6 @@
     <SourceLine>AppLog("  NodeInfo on " + MeshChannelName(c) + " failed: " + problem)</SourceLine>
     <SourceLine>End If</SourceLine>
     <SourceLine>Next</SourceLine>
-    <SourceLine>End If</SourceLine>
     <SourceLine>End If</SourceLine>
     <SourceLine></SourceLine>
     <SourceLine>End Sub</SourceLine>
@@ -679,7 +720,9 @@
     <SourceLine>MQTTClient1.SetTLS(AppTLS(), AppTLSConnectionType())</SourceLine>
     <SourceLine>If AppTLS() Then AppLog("Note: the broker's certificate is not verified (Xojo SSLSocket limitation): TLS protects against eavesdropping, not against impersonation")</SourceLine>
     <SourceLine>MQTTClient1.SetCredentials(AppUsername(), AppPassword())</SourceLine>
-    <SourceLine>AppSetConnectButton(True) // back to "Connect" when the connection ends (SocketError, MQTTDisconnected, MQTTConnectionRefused)</SourceLine>
+    <SourceLine>MQTTClient1.SetAutoReconnect(AppReconnect(), AppReconnectMaxDelay(), AppReconnectGiveUp())</SourceLine>
+    <SourceLine>AppStartSession</SourceLine>
+    <SourceLine>AppSetConnectButton(True) // back to "Connect" when the connection ends for good</SourceLine>
     <SourceLine>MQTTClient1.Connect(AppHost(), AppPort(), AppClientID())</SourceLine>
     <SourceLine>End Sub</SourceLine>
    </ItemSource>
@@ -1145,6 +1188,7 @@
    <SourceLine>Sub DataAvailable()</SourceLine>
    <SourceLine>Dim s As String</SourceLine>
    <SourceLine>s = Me.ReadAll</SourceLine>
+   <SourceLine>mLastReceived = NowSeconds() // for the keep-alive watchdog</SourceLine>
    <SourceLine>mRxBuffer = mRxBuffer + s</SourceLine>
    <SourceLine>RaiseEvent RawDataReceived(s) // every TCP read, e.g. for a hex dump</SourceLine>
    <SourceLine></SourceLine>
@@ -1188,8 +1232,18 @@
    <SourceLine>Dim wasConnected As Boolean = mConnectedMQTT</SourceLine>
    <SourceLine>mConnectedMQTT = False</SourceLine>
    <SourceLine>mRxBuffer = ""</SourceLine>
+   <SourceLine>Dim reason As String = ErrorDescription(err)</SourceLine>
+   <SourceLine>// Reconnect if wanted, except after a failed TLS handshake (303): that is a configuration problem</SourceLine>
+   <SourceLine>Dim retry, gaveUp As Boolean</SourceLine>
+   <SourceLine>If err.ErrorNumber = 303 Then</SourceLine>
+   <SourceLine>mWantConnected = False</SourceLine>
+   <SourceLine>Else</SourceLine>
+   <SourceLine>retry = ScheduleReconnect(gaveUp)</SourceLine>
+   <SourceLine>End If</SourceLine>
    <SourceLine>RaiseEvent SocketError(err)</SourceLine>
    <SourceLine>If wasConnected Then RaiseEvent MQTTDisconnected</SourceLine>
+   <SourceLine>If retry Then RaiseEvent Reconnecting(mReconnectAttempt, mReconnectDelay, reason)</SourceLine>
+   <SourceLine>If gaveUp Then RaiseEvent ReconnectFailed(reason)</SourceLine>
    <SourceLine>End Sub</SourceLine>
   </ItemSource>
  </HookInstance>
@@ -1214,6 +1268,13 @@
    <SourceLine>mPingTimer.RunMode = Timer.RunModes.Off</SourceLine>
    <SourceLine>mPingTimer.Period = 1000</SourceLine>
    <SourceLine>AddHandler mPingTimer.Action, AddressOf PingTimerAction</SourceLine>
+   <SourceLine></SourceLine>
+   <SourceLine>mTLSType = SSLSocket.SSLConnectionTypes.TLSv12</SourceLine>
+   <SourceLine>mReconnectMaxDelay = 60</SourceLine>
+   <SourceLine>mReconnectGiveUp = 900</SourceLine>
+   <SourceLine>mReconnectTimer = New Timer</SourceLine>
+   <SourceLine>mReconnectTimer.RunMode = Timer.RunModes.Off</SourceLine>
+   <SourceLine>AddHandler mReconnectTimer.Action, AddressOf ReconnectTimerAction</SourceLine>
    <SourceLine>End Sub</SourceLine>
   </ItemSource>
   <TextEncoding>134217984</TextEncoding>
@@ -1255,9 +1316,10 @@
    <SourceLine>// MQTT over TLS (brokers usually listen on port 8883). Call before Connect.</SourceLine>
    <SourceLine>// connectionType: TLSv12 (default), TLSv13, or SSLv23 to negotiate the best version both sides support.</SourceLine>
    <SourceLine>// Limitation: Xojo's SSLSocket encrypts the connection but does not verify the broker's certificate</SourceLine>
-   <SourceLine>// (tested: a self-signed certificate is accepted), so TLS protects against eavesdropping, not impersonation</SourceLine>
-   <SourceLine>Me.SSLEnabled = enabled</SourceLine>
-   <SourceLine>Me.SSLConnectionType = connectionType</SourceLine>
+   <SourceLine>// (tested: a self-signed certificate is accepted), so TLS protects against eavesdropping, not impersonation.</SourceLine>
+   <SourceLine>// The settings are kept here and applied at every (re)connection, since SSLSocket.Close resets them</SourceLine>
+   <SourceLine>mTLSEnabled = enabled</SourceLine>
+   <SourceLine>mTLSType = connectionType</SourceLine>
    <SourceLine>End Sub</SourceLine>
   </ItemSource>
   <TextEncoding>134217984</TextEncoding>
@@ -1281,12 +1343,11 @@
    <SourceLine>If mClientID = "" Then mClientID = "XojoMQTT-" + Str(DateTime.Now.SecondsFrom1970)</SourceLine>
    <SourceLine>mKeepAlive = keepAliveSeconds</SourceLine>
    <SourceLine>mCleanSession = cleanSession</SourceLine>
-   <SourceLine>mRxBuffer = ""</SourceLine>
-   <SourceLine>mConnectedMQTT = False</SourceLine>
-   <SourceLine></SourceLine>
-   <SourceLine>Me.Address = mHost</SourceLine>
-   <SourceLine>Me.Port = mPort</SourceLine>
-   <SourceLine>Super.Connect</SourceLine>
+   <SourceLine>mWantConnected = True</SourceLine>
+   <SourceLine>mReconnectAttempt = 0</SourceLine>
+   <SourceLine>mReconnectStarted = 0</SourceLine>
+   <SourceLine>mReconnectTimer.RunMode = Timer.RunModes.Off</SourceLine>
+   <SourceLine>DoConnect</SourceLine>
    <SourceLine>End Sub</SourceLine>
   </ItemSource>
   <TextEncoding>134217984</TextEncoding>
@@ -1365,6 +1426,11 @@
   <ItemSource>
    <TextEncoding>134217984</TextEncoding>
    <SourceLine>Sub Publish(topic As String, payload As String, retain As Boolean = False)</SourceLine>
+   <SourceLine>// QoS 0 publish. Skipped (with a Trace) while not connected, instead of writing to a closed socket</SourceLine>
+   <SourceLine>If Not mConnectedMQTT Then</SourceLine>
+   <SourceLine>RaiseEvent Trace("Not connected: publish to " + topic + " skipped")</SourceLine>
+   <SourceLine>Return</SourceLine>
+   <SourceLine>End If</SourceLine>
    <SourceLine>Dim body As String = EncodeString(topic) + UTF8Bytes(payload)</SourceLine>
    <SourceLine>Dim firstByte As Integer = &amp;h30</SourceLine>
    <SourceLine>If retain Then firstByte = firstByte Or &amp;h01</SourceLine>
@@ -1379,6 +1445,202 @@
   <ItemResult></ItemResult>
  </Method>
  <Method>
+  <ItemName>SetAutoReconnect</ItemName>
+  <Compatibility></Compatibility>
+  <Visible>1</Visible>
+  <PartID>511437559</PartID>
+  <ItemSource>
+   <TextEncoding>134217984</TextEncoding>
+   <SourceLine>Sub SetAutoReconnect(enabled As Boolean, maxDelaySeconds As Integer = 60, giveUpAfterSeconds As Integer = 900)</SourceLine>
+   <SourceLine>// Reconnect automatically when the connection is lost (also when the first attempt fails): exponential</SourceLine>
+   <SourceLine>// back-off 2, 4, 8 ... maxDelaySeconds with +/-20% jitter, giving up after giveUpAfterSeconds without success.</SourceLine>
+   <SourceLine>// Not after a refused login (except code 3, server unavailable), a failed TLS handshake, or Disconnect</SourceLine>
+   <SourceLine>mAutoReconnect = enabled</SourceLine>
+   <SourceLine>mReconnectMaxDelay = Max(2, maxDelaySeconds)</SourceLine>
+   <SourceLine>mReconnectGiveUp = Max(10, giveUpAfterSeconds)</SourceLine>
+   <SourceLine>End Sub</SourceLine>
+  </ItemSource>
+  <TextEncoding>134217984</TextEncoding>
+  <AliasName></AliasName>
+  <ItemFlags>0</ItemFlags>
+  <IsShared>0</IsShared>
+  <ItemParams>enabled As Boolean, maxDelaySeconds As Integer = 60, giveUpAfterSeconds As Integer = 900</ItemParams>
+  <ItemResult></ItemResult>
+ </Method>
+ <Method>
+  <ItemName>IsReconnecting</ItemName>
+  <Compatibility></Compatibility>
+  <Visible>1</Visible>
+  <PartID>489500598</PartID>
+  <ItemSource>
+   <TextEncoding>134217984</TextEncoding>
+   <SourceLine>Function IsReconnecting() As Boolean</SourceLine>
+   <SourceLine>// True while waiting for the next reconnection attempt</SourceLine>
+   <SourceLine>Return mReconnectTimer.RunMode &lt;&gt; Timer.RunModes.Off</SourceLine>
+   <SourceLine>End Function</SourceLine>
+  </ItemSource>
+  <TextEncoding>134217984</TextEncoding>
+  <AliasName></AliasName>
+  <ItemFlags>0</ItemFlags>
+  <IsShared>0</IsShared>
+  <ItemParams></ItemParams>
+  <ItemResult>Boolean</ItemResult>
+ </Method>
+ <Method>
+  <ItemName>ErrorDescription</ItemName>
+  <Compatibility></Compatibility>
+  <Visible>1</Visible>
+  <PartID>812222618</PartID>
+  <ItemSource>
+   <TextEncoding>134217984</TextEncoding>
+   <SourceLine>Function ErrorDescription(err As RuntimeException) As String</SourceLine>
+   <SourceLine>// A readable socket error: Xojo's message, or what the code means when it comes without one</SourceLine>
+   <SourceLine>Dim message As String = err.Message</SourceLine>
+   <SourceLine>Select Case err.ErrorNumber</SourceLine>
+   <SourceLine>Case 303 // undocumented: seen when the TLS handshake fails</SourceLine>
+   <SourceLine>message = "TLS handshake failed (the server refused the secure connection, or doesn't speak TLS on this port)"</SourceLine>
+   <SourceLine>Case 49 // macOS EADDRNOTAVAIL: no usable network, e.g. Wi-Fi off</SourceLine>
+   <SourceLine>If message = "" Then message = "network unavailable"</SourceLine>
+   <SourceLine>End Select</SourceLine>
+   <SourceLine>If message = "" Then message = "(no message)"</SourceLine>
+   <SourceLine>Return "error " + Str(err.ErrorNumber) + ": " + message</SourceLine>
+   <SourceLine>End Function</SourceLine>
+  </ItemSource>
+  <TextEncoding>134217984</TextEncoding>
+  <AliasName></AliasName>
+  <ItemFlags>0</ItemFlags>
+  <IsShared>0</IsShared>
+  <ItemParams>err As RuntimeException</ItemParams>
+  <ItemResult>String</ItemResult>
+ </Method>
+ <Method>
+  <ItemName>DoConnect</ItemName>
+  <Compatibility></Compatibility>
+  <Visible>1</Visible>
+  <PartID>1995620309</PartID>
+  <ItemSource>
+   <TextEncoding>134217984</TextEncoding>
+   <SourceLine>Sub DoConnect()</SourceLine>
+   <SourceLine>// (Re)connects with the stored settings. SSLSocket.Close keeps only the address and port, so TLS is set every time</SourceLine>
+   <SourceLine>mRxBuffer = ""</SourceLine>
+   <SourceLine>mConnectedMQTT = False</SourceLine>
+   <SourceLine>Me.SSLEnabled = mTLSEnabled</SourceLine>
+   <SourceLine>Me.SSLConnectionType = mTLSType</SourceLine>
+   <SourceLine>Me.Address = mHost</SourceLine>
+   <SourceLine>Me.Port = mPort</SourceLine>
+   <SourceLine>Super.Connect</SourceLine>
+   <SourceLine>End Sub</SourceLine>
+  </ItemSource>
+  <TextEncoding>134217984</TextEncoding>
+  <AliasName></AliasName>
+  <ItemFlags>0</ItemFlags>
+  <IsShared>0</IsShared>
+  <ItemParams></ItemParams>
+  <ItemResult></ItemResult>
+ </Method>
+ <Method>
+  <ItemName>NowSeconds</ItemName>
+  <Compatibility></Compatibility>
+  <Visible>1</Visible>
+  <PartID>1948168032</PartID>
+  <ItemSource>
+   <TextEncoding>134217984</TextEncoding>
+   <SourceLine>Function NowSeconds() As Double</SourceLine>
+   <SourceLine>Return System.Microseconds / 1000000</SourceLine>
+   <SourceLine>End Function</SourceLine>
+  </ItemSource>
+  <TextEncoding>134217984</TextEncoding>
+  <AliasName></AliasName>
+  <ItemFlags>0</ItemFlags>
+  <IsShared>0</IsShared>
+  <ItemParams></ItemParams>
+  <ItemResult>Double</ItemResult>
+ </Method>
+ <Method>
+  <ItemName>ScheduleReconnect</ItemName>
+  <Compatibility></Compatibility>
+  <Visible>1</Visible>
+  <PartID>1390102406</PartID>
+  <ItemSource>
+   <TextEncoding>134217984</TextEncoding>
+   <SourceLine>Function ScheduleReconnect(ByRef gaveUp As Boolean) As Boolean</SourceLine>
+   <SourceLine>// Plans the next attempt (back-off with jitter). False when reconnecting is off or not wanted;</SourceLine>
+   <SourceLine>// gaveUp = True when the give-up time has passed since the connection was first lost</SourceLine>
+   <SourceLine>gaveUp = False</SourceLine>
+   <SourceLine>If Not mAutoReconnect Or Not mWantConnected Then Return False</SourceLine>
+   <SourceLine>Dim t As Double = NowSeconds()</SourceLine>
+   <SourceLine>If mReconnectStarted = 0 Then mReconnectStarted = t</SourceLine>
+   <SourceLine>If t - mReconnectStarted &gt; mReconnectGiveUp Then</SourceLine>
+   <SourceLine>mWantConnected = False</SourceLine>
+   <SourceLine>gaveUp = True</SourceLine>
+   <SourceLine>Return False</SourceLine>
+   <SourceLine>End If</SourceLine>
+   <SourceLine>mReconnectAttempt = mReconnectAttempt + 1</SourceLine>
+   <SourceLine>Dim delay As Double = 2 ^ Min(mReconnectAttempt, 10)</SourceLine>
+   <SourceLine>If delay &gt; mReconnectMaxDelay Then delay = mReconnectMaxDelay</SourceLine>
+   <SourceLine>delay = delay * (0.8 + 0.4 * System.Random.Number)</SourceLine>
+   <SourceLine>mReconnectDelay = Max(1, CType(Round(delay), Integer))</SourceLine>
+   <SourceLine>mReconnectTimer.Period = mReconnectDelay * 1000</SourceLine>
+   <SourceLine>mReconnectTimer.RunMode = Timer.RunModes.Single</SourceLine>
+   <SourceLine>Return True</SourceLine>
+   <SourceLine>End Function</SourceLine>
+  </ItemSource>
+  <TextEncoding>134217984</TextEncoding>
+  <AliasName></AliasName>
+  <ItemFlags>0</ItemFlags>
+  <IsShared>0</IsShared>
+  <ItemParams>ByRef gaveUp As Boolean</ItemParams>
+  <ItemResult>Boolean</ItemResult>
+ </Method>
+ <Method>
+  <ItemName>ReconnectTimerAction</ItemName>
+  <Compatibility></Compatibility>
+  <Visible>1</Visible>
+  <PartID>516900794</PartID>
+  <ItemSource>
+   <TextEncoding>134217984</TextEncoding>
+   <SourceLine>Sub ReconnectTimerAction(sender As Timer)</SourceLine>
+   <SourceLine>If Not mWantConnected Then Return</SourceLine>
+   <SourceLine>RaiseEvent Trace("Reconnecting (attempt " + Str(mReconnectAttempt) + ")")</SourceLine>
+   <SourceLine>DoConnect</SourceLine>
+   <SourceLine>End Sub</SourceLine>
+  </ItemSource>
+  <TextEncoding>134217984</TextEncoding>
+  <AliasName></AliasName>
+  <ItemFlags>0</ItemFlags>
+  <IsShared>0</IsShared>
+  <ItemParams>sender As Timer</ItemParams>
+  <ItemResult></ItemResult>
+ </Method>
+ <Method>
+  <ItemName>ConnectionLost</ItemName>
+  <Compatibility></Compatibility>
+  <Visible>1</Visible>
+  <PartID>443668222</PartID>
+  <ItemSource>
+   <TextEncoding>134217984</TextEncoding>
+   <SourceLine>Sub ConnectionLost(reason As String)</SourceLine>
+   <SourceLine>// The connection is dead without a socket error (keep-alive timeout): close it, then reconnect if wanted</SourceLine>
+   <SourceLine>StopKeepAlive</SourceLine>
+   <SourceLine>mConnectedMQTT = False</SourceLine>
+   <SourceLine>mRxBuffer = ""</SourceLine>
+   <SourceLine>Me.Close</SourceLine>
+   <SourceLine>Dim gaveUp As Boolean</SourceLine>
+   <SourceLine>Dim retry As Boolean = ScheduleReconnect(gaveUp)</SourceLine>
+   <SourceLine>RaiseEvent Trace("Connection lost: " + reason)</SourceLine>
+   <SourceLine>RaiseEvent MQTTDisconnected</SourceLine>
+   <SourceLine>If retry Then RaiseEvent Reconnecting(mReconnectAttempt, mReconnectDelay, reason)</SourceLine>
+   <SourceLine>If gaveUp Then RaiseEvent ReconnectFailed(reason)</SourceLine>
+   <SourceLine>End Sub</SourceLine>
+  </ItemSource>
+  <TextEncoding>134217984</TextEncoding>
+  <AliasName></AliasName>
+  <ItemFlags>0</ItemFlags>
+  <IsShared>0</IsShared>
+  <ItemParams>reason As String</ItemParams>
+  <ItemResult></ItemResult>
+ </Method>
+ <Method>
   <ItemName>Disconnect</ItemName>
   <Compatibility></Compatibility>
   <Visible>1</Visible>
@@ -1386,6 +1648,9 @@
   <ItemSource>
    <TextEncoding>134217984</TextEncoding>
    <SourceLine>Sub Disconnect()</SourceLine>
+   <SourceLine>// Closes the connection on purpose: also cancels any pending or running reconnection</SourceLine>
+   <SourceLine>mWantConnected = False</SourceLine>
+   <SourceLine>mReconnectTimer.RunMode = Timer.RunModes.Off</SourceLine>
    <SourceLine>If mConnectedMQTT Then</SourceLine>
    <SourceLine>Me.Write(String.ChrByte(&amp;hE0) + String.ChrByte(0))</SourceLine>
    <SourceLine>mConnectedMQTT = False</SourceLine>
@@ -1461,7 +1726,7 @@
    <SourceLine>If Not mConnectedMQTT And (packetType &lt;&gt; 2 Or body.Bytes &lt;&gt; 2) Then</SourceLine>
    <SourceLine>RaiseEvent Trace("The server did not answer with an MQTT CONNACK (got packet type " + Str(packetType) + ", " + Str(body.Bytes) + " bytes): is it an MQTT broker? Disconnecting")</SourceLine>
    <SourceLine>mRxBuffer = ""</SourceLine>
-   <SourceLine>Disconnect</SourceLine>
+   <SourceLine>Disconnect // final: not worth reconnecting</SourceLine>
    <SourceLine>RaiseEvent MQTTDisconnected</SourceLine>
    <SourceLine>Return</SourceLine>
    <SourceLine>End If</SourceLine>
@@ -1501,11 +1766,23 @@
    <SourceLine></SourceLine>
    <SourceLine>If returnCode = 0 Then</SourceLine>
    <SourceLine>mConnectedMQTT = True</SourceLine>
+   <SourceLine>mReconnectAttempt = 0</SourceLine>
+   <SourceLine>mReconnectStarted = 0</SourceLine>
    <SourceLine>StartKeepAlive</SourceLine>
    <SourceLine>RaiseEvent MQTTConnected(sessionPresent)</SourceLine>
    <SourceLine>Else</SourceLine>
+   <SourceLine>// Only "server unavailable" (3) is worth retrying: protocol, identity and credential problems (1, 2, 4, 5)</SourceLine>
+   <SourceLine>// won't go away, and retrying bad credentials can get a client banned</SourceLine>
+   <SourceLine>Dim retry, gaveUp As Boolean</SourceLine>
+   <SourceLine>If returnCode = 3 Then</SourceLine>
+   <SourceLine>retry = ScheduleReconnect(gaveUp)</SourceLine>
+   <SourceLine>Else</SourceLine>
+   <SourceLine>mWantConnected = False</SourceLine>
+   <SourceLine>End If</SourceLine>
    <SourceLine>RaiseEvent MQTTConnectionRefused(returnCode)</SourceLine>
    <SourceLine>Me.Close</SourceLine>
+   <SourceLine>If retry Then RaiseEvent Reconnecting(mReconnectAttempt, mReconnectDelay, "server unavailable (code 3)")</SourceLine>
+   <SourceLine>If gaveUp Then RaiseEvent ReconnectFailed("server unavailable (code 3)")</SourceLine>
    <SourceLine>End If</SourceLine>
    <SourceLine>End Sub</SourceLine>
   </ItemSource>
@@ -1710,8 +1987,11 @@
   <ItemSource>
    <TextEncoding>134217984</TextEncoding>
    <SourceLine>Sub StartKeepAlive()</SourceLine>
+   <SourceLine>// The timer ticks every half keep-alive period: PingTimerAction sends PINGREQ and watches for silence</SourceLine>
    <SourceLine>If mKeepAlive &lt;= 0 Then Return</SourceLine>
-   <SourceLine>mPingTimer.Period = mKeepAlive * 1000</SourceLine>
+   <SourceLine>mLastReceived = NowSeconds()</SourceLine>
+   <SourceLine>mLastPingSent = mLastReceived</SourceLine>
+   <SourceLine>mPingTimer.Period = mKeepAlive * 500</SourceLine>
    <SourceLine>mPingTimer.RunMode = Timer.RunModes.Multiple</SourceLine>
    <SourceLine>End Sub</SourceLine>
   </ItemSource>
@@ -1748,7 +2028,18 @@
   <ItemSource>
    <TextEncoding>134217984</TextEncoding>
    <SourceLine>Sub PingTimerAction(sender As Timer)</SourceLine>
-   <SourceLine>If mConnectedMQTT Then SendPingReq</SourceLine>
+   <SourceLine>// Keep-alive: a PINGREQ every keep-alive period, and the connection counts as lost when nothing at all</SourceLine>
+   <SourceLine>// has arrived for 1.5 keep-alive periods (the broker answers every PINGREQ), e.g. a silent network drop</SourceLine>
+   <SourceLine>If Not mConnectedMQTT Then Return</SourceLine>
+   <SourceLine>Dim t As Double = NowSeconds()</SourceLine>
+   <SourceLine>If t - mLastReceived &gt; mKeepAlive * 1.5 Then</SourceLine>
+   <SourceLine>ConnectionLost("no answer from the broker for " + Str(CType(t - mLastReceived, Integer)) + " s (keep-alive timeout)")</SourceLine>
+   <SourceLine>Return</SourceLine>
+   <SourceLine>End If</SourceLine>
+   <SourceLine>If t - mLastPingSent &gt;= mKeepAlive - 1 Then</SourceLine>
+   <SourceLine>SendPingReq</SourceLine>
+   <SourceLine>mLastPingSent = t</SourceLine>
+   <SourceLine>End If</SourceLine>
    <SourceLine>End Sub</SourceLine>
   </ItemSource>
   <TextEncoding>134217984</TextEncoding>
@@ -1916,78 +2207,6 @@
   <ItemParams>data As String, startPos As Integer, ByRef bytesUsed As Integer</ItemParams>
   <ItemResult>Integer</ItemResult>
  </Method>
- <Hook>
-  <ItemName>MQTTConnected</ItemName>
-  <TextEncoding>134217984</TextEncoding>
-  <ItemFlags>33</ItemFlags>
-  <SystemFlags>0</SystemFlags>
-  <ItemParams>sessionPresent As Boolean</ItemParams>
-  <ItemResult></ItemResult>
- </Hook>
- <Hook>
-  <ItemName>MQTTConnectionRefused</ItemName>
-  <TextEncoding>134217984</TextEncoding>
-  <ItemFlags>33</ItemFlags>
-  <SystemFlags>0</SystemFlags>
-  <ItemParams>reasonCode As Integer</ItemParams>
-  <ItemResult></ItemResult>
- </Hook>
- <Hook>
-  <ItemName>MQTTDisconnected</ItemName>
-  <TextEncoding>134217984</TextEncoding>
-  <ItemFlags>33</ItemFlags>
-  <SystemFlags>0</SystemFlags>
-  <ItemParams></ItemParams>
-  <ItemResult></ItemResult>
- </Hook>
- <Hook>
-  <ItemName>MessageReceived</ItemName>
-  <TextEncoding>134217984</TextEncoding>
-  <ItemFlags>33</ItemFlags>
-  <SystemFlags>0</SystemFlags>
-  <ItemParams>topic As String, payload As String, qos As Integer, retained As Boolean</ItemParams>
-  <ItemResult></ItemResult>
- </Hook>
- <Hook>
-  <ItemName>Subscribed</ItemName>
-  <TextEncoding>134217984</TextEncoding>
-  <ItemFlags>33</ItemFlags>
-  <SystemFlags>0</SystemFlags>
-  <ItemParams>packetID As Integer, grantedQoS() As Integer</ItemParams>
-  <ItemResult></ItemResult>
- </Hook>
- <Hook>
-  <ItemName>Unsubscribed</ItemName>
-  <TextEncoding>134217984</TextEncoding>
-  <ItemFlags>33</ItemFlags>
-  <SystemFlags>0</SystemFlags>
-  <ItemParams>packetID As Integer</ItemParams>
-  <ItemResult></ItemResult>
- </Hook>
- <Hook>
-  <ItemName>SocketError</ItemName>
-  <TextEncoding>134217984</TextEncoding>
-  <ItemFlags>33</ItemFlags>
-  <SystemFlags>0</SystemFlags>
-  <ItemParams>err As RuntimeException</ItemParams>
-  <ItemResult></ItemResult>
- </Hook>
- <Hook>
-  <ItemName>Trace</ItemName>
-  <TextEncoding>134217984</TextEncoding>
-  <ItemFlags>33</ItemFlags>
-  <SystemFlags>0</SystemFlags>
-  <ItemParams>message As String</ItemParams>
-  <ItemResult></ItemResult>
- </Hook>
- <Hook>
-  <ItemName>RawDataReceived</ItemName>
-  <TextEncoding>134217984</TextEncoding>
-  <ItemFlags>33</ItemFlags>
-  <SystemFlags>0</SystemFlags>
-  <ItemParams>data As String</ItemParams>
-  <ItemResult></ItemResult>
- </Hook>
  <Property>
   <ItemName>mHost</ItemName>
   <Compatibility></Compatibility>
@@ -2198,6 +2417,274 @@
   <ItemFlags>33</ItemFlags>
   <IsShared>0</IsShared>
  </Property>
+ <Property>
+  <ItemName>mTLSEnabled</ItemName>
+  <Compatibility></Compatibility>
+  <Visible>1</Visible>
+  <PartID>856206889</PartID>
+  <ItemSource>
+   <TextEncoding>134217984</TextEncoding>
+   <SourceLine>mTLSEnabled As Boolean</SourceLine>
+   <SourceLine></SourceLine>
+  </ItemSource>
+  <TextEncoding>134217984</TextEncoding>
+  <ItemDeclaration>mTLSEnabled As Boolean</ItemDeclaration>
+  <ItemFlags>33</ItemFlags>
+  <IsShared>0</IsShared>
+ </Property>
+ <Property>
+  <ItemName>mTLSType</ItemName>
+  <Compatibility></Compatibility>
+  <Visible>1</Visible>
+  <PartID>1518081486</PartID>
+  <ItemSource>
+   <TextEncoding>134217984</TextEncoding>
+   <SourceLine>mTLSType As SSLSocket.SSLConnectionTypes</SourceLine>
+   <SourceLine></SourceLine>
+  </ItemSource>
+  <TextEncoding>134217984</TextEncoding>
+  <ItemDeclaration>mTLSType As SSLSocket.SSLConnectionTypes</ItemDeclaration>
+  <ItemFlags>33</ItemFlags>
+  <IsShared>0</IsShared>
+ </Property>
+ <Property>
+  <ItemName>mAutoReconnect</ItemName>
+  <Compatibility></Compatibility>
+  <Visible>1</Visible>
+  <PartID>1859711371</PartID>
+  <ItemSource>
+   <TextEncoding>134217984</TextEncoding>
+   <SourceLine>mAutoReconnect As Boolean</SourceLine>
+   <SourceLine></SourceLine>
+  </ItemSource>
+  <TextEncoding>134217984</TextEncoding>
+  <ItemDeclaration>mAutoReconnect As Boolean</ItemDeclaration>
+  <ItemFlags>33</ItemFlags>
+  <IsShared>0</IsShared>
+ </Property>
+ <Property>
+  <ItemName>mReconnectMaxDelay</ItemName>
+  <Compatibility></Compatibility>
+  <Visible>1</Visible>
+  <PartID>797745871</PartID>
+  <ItemSource>
+   <TextEncoding>134217984</TextEncoding>
+   <SourceLine>mReconnectMaxDelay As Integer</SourceLine>
+   <SourceLine></SourceLine>
+  </ItemSource>
+  <TextEncoding>134217984</TextEncoding>
+  <ItemDeclaration>mReconnectMaxDelay As Integer</ItemDeclaration>
+  <ItemFlags>33</ItemFlags>
+  <IsShared>0</IsShared>
+ </Property>
+ <Property>
+  <ItemName>mReconnectGiveUp</ItemName>
+  <Compatibility></Compatibility>
+  <Visible>1</Visible>
+  <PartID>202198869</PartID>
+  <ItemSource>
+   <TextEncoding>134217984</TextEncoding>
+   <SourceLine>mReconnectGiveUp As Integer</SourceLine>
+   <SourceLine></SourceLine>
+  </ItemSource>
+  <TextEncoding>134217984</TextEncoding>
+  <ItemDeclaration>mReconnectGiveUp As Integer</ItemDeclaration>
+  <ItemFlags>33</ItemFlags>
+  <IsShared>0</IsShared>
+ </Property>
+ <Property>
+  <ItemName>mWantConnected</ItemName>
+  <Compatibility></Compatibility>
+  <Visible>1</Visible>
+  <PartID>2049352825</PartID>
+  <ItemSource>
+   <TextEncoding>134217984</TextEncoding>
+   <SourceLine>mWantConnected As Boolean</SourceLine>
+   <SourceLine></SourceLine>
+  </ItemSource>
+  <TextEncoding>134217984</TextEncoding>
+  <ItemDeclaration>mWantConnected As Boolean</ItemDeclaration>
+  <ItemFlags>33</ItemFlags>
+  <IsShared>0</IsShared>
+ </Property>
+ <Property>
+  <ItemName>mReconnectAttempt</ItemName>
+  <Compatibility></Compatibility>
+  <Visible>1</Visible>
+  <PartID>371385486</PartID>
+  <ItemSource>
+   <TextEncoding>134217984</TextEncoding>
+   <SourceLine>mReconnectAttempt As Integer</SourceLine>
+   <SourceLine></SourceLine>
+  </ItemSource>
+  <TextEncoding>134217984</TextEncoding>
+  <ItemDeclaration>mReconnectAttempt As Integer</ItemDeclaration>
+  <ItemFlags>33</ItemFlags>
+  <IsShared>0</IsShared>
+ </Property>
+ <Property>
+  <ItemName>mReconnectStarted</ItemName>
+  <Compatibility></Compatibility>
+  <Visible>1</Visible>
+  <PartID>428199154</PartID>
+  <ItemSource>
+   <TextEncoding>134217984</TextEncoding>
+   <SourceLine>mReconnectStarted As Double</SourceLine>
+   <SourceLine></SourceLine>
+  </ItemSource>
+  <TextEncoding>134217984</TextEncoding>
+  <ItemDeclaration>mReconnectStarted As Double</ItemDeclaration>
+  <ItemFlags>33</ItemFlags>
+  <IsShared>0</IsShared>
+ </Property>
+ <Property>
+  <ItemName>mReconnectDelay</ItemName>
+  <Compatibility></Compatibility>
+  <Visible>1</Visible>
+  <PartID>2062321008</PartID>
+  <ItemSource>
+   <TextEncoding>134217984</TextEncoding>
+   <SourceLine>mReconnectDelay As Integer</SourceLine>
+   <SourceLine></SourceLine>
+  </ItemSource>
+  <TextEncoding>134217984</TextEncoding>
+  <ItemDeclaration>mReconnectDelay As Integer</ItemDeclaration>
+  <ItemFlags>33</ItemFlags>
+  <IsShared>0</IsShared>
+ </Property>
+ <Property>
+  <ItemName>mReconnectTimer</ItemName>
+  <Compatibility></Compatibility>
+  <Visible>1</Visible>
+  <PartID>1494882616</PartID>
+  <ItemSource>
+   <TextEncoding>134217984</TextEncoding>
+   <SourceLine>mReconnectTimer As Timer</SourceLine>
+   <SourceLine></SourceLine>
+  </ItemSource>
+  <TextEncoding>134217984</TextEncoding>
+  <ItemDeclaration>mReconnectTimer As Timer</ItemDeclaration>
+  <ItemFlags>33</ItemFlags>
+  <IsShared>0</IsShared>
+ </Property>
+ <Property>
+  <ItemName>mLastReceived</ItemName>
+  <Compatibility></Compatibility>
+  <Visible>1</Visible>
+  <PartID>424991627</PartID>
+  <ItemSource>
+   <TextEncoding>134217984</TextEncoding>
+   <SourceLine>mLastReceived As Double</SourceLine>
+   <SourceLine></SourceLine>
+  </ItemSource>
+  <TextEncoding>134217984</TextEncoding>
+  <ItemDeclaration>mLastReceived As Double</ItemDeclaration>
+  <ItemFlags>33</ItemFlags>
+  <IsShared>0</IsShared>
+ </Property>
+ <Property>
+  <ItemName>mLastPingSent</ItemName>
+  <Compatibility></Compatibility>
+  <Visible>1</Visible>
+  <PartID>1915665513</PartID>
+  <ItemSource>
+   <TextEncoding>134217984</TextEncoding>
+   <SourceLine>mLastPingSent As Double</SourceLine>
+   <SourceLine></SourceLine>
+  </ItemSource>
+  <TextEncoding>134217984</TextEncoding>
+  <ItemDeclaration>mLastPingSent As Double</ItemDeclaration>
+  <ItemFlags>33</ItemFlags>
+  <IsShared>0</IsShared>
+ </Property>
+ <Hook>
+  <ItemName>MQTTConnected</ItemName>
+  <TextEncoding>134217984</TextEncoding>
+  <ItemFlags>33</ItemFlags>
+  <SystemFlags>0</SystemFlags>
+  <ItemParams>sessionPresent As Boolean</ItemParams>
+  <ItemResult></ItemResult>
+ </Hook>
+ <Hook>
+  <ItemName>MQTTConnectionRefused</ItemName>
+  <TextEncoding>134217984</TextEncoding>
+  <ItemFlags>33</ItemFlags>
+  <SystemFlags>0</SystemFlags>
+  <ItemParams>reasonCode As Integer</ItemParams>
+  <ItemResult></ItemResult>
+ </Hook>
+ <Hook>
+  <ItemName>MQTTDisconnected</ItemName>
+  <TextEncoding>134217984</TextEncoding>
+  <ItemFlags>33</ItemFlags>
+  <SystemFlags>0</SystemFlags>
+  <ItemParams></ItemParams>
+  <ItemResult></ItemResult>
+ </Hook>
+ <Hook>
+  <ItemName>MessageReceived</ItemName>
+  <TextEncoding>134217984</TextEncoding>
+  <ItemFlags>33</ItemFlags>
+  <SystemFlags>0</SystemFlags>
+  <ItemParams>topic As String, payload As String, qos As Integer, retained As Boolean</ItemParams>
+  <ItemResult></ItemResult>
+ </Hook>
+ <Hook>
+  <ItemName>Subscribed</ItemName>
+  <TextEncoding>134217984</TextEncoding>
+  <ItemFlags>33</ItemFlags>
+  <SystemFlags>0</SystemFlags>
+  <ItemParams>packetID As Integer, grantedQoS() As Integer</ItemParams>
+  <ItemResult></ItemResult>
+ </Hook>
+ <Hook>
+  <ItemName>Unsubscribed</ItemName>
+  <TextEncoding>134217984</TextEncoding>
+  <ItemFlags>33</ItemFlags>
+  <SystemFlags>0</SystemFlags>
+  <ItemParams>packetID As Integer</ItemParams>
+  <ItemResult></ItemResult>
+ </Hook>
+ <Hook>
+  <ItemName>SocketError</ItemName>
+  <TextEncoding>134217984</TextEncoding>
+  <ItemFlags>33</ItemFlags>
+  <SystemFlags>0</SystemFlags>
+  <ItemParams>err As RuntimeException</ItemParams>
+  <ItemResult></ItemResult>
+ </Hook>
+ <Hook>
+  <ItemName>Trace</ItemName>
+  <TextEncoding>134217984</TextEncoding>
+  <ItemFlags>33</ItemFlags>
+  <SystemFlags>0</SystemFlags>
+  <ItemParams>message As String</ItemParams>
+  <ItemResult></ItemResult>
+ </Hook>
+ <Hook>
+  <ItemName>RawDataReceived</ItemName>
+  <TextEncoding>134217984</TextEncoding>
+  <ItemFlags>33</ItemFlags>
+  <SystemFlags>0</SystemFlags>
+  <ItemParams>data As String</ItemParams>
+  <ItemResult></ItemResult>
+ </Hook>
+ <Hook>
+  <ItemName>Reconnecting</ItemName>
+  <TextEncoding>134217984</TextEncoding>
+  <ItemFlags>33</ItemFlags>
+  <SystemFlags>0</SystemFlags>
+  <ItemParams>attempt As Integer, delaySeconds As Integer, reason As String</ItemParams>
+  <ItemResult></ItemResult>
+ </Hook>
+ <Hook>
+  <ItemName>ReconnectFailed</ItemName>
+  <TextEncoding>134217984</TextEncoding>
+  <ItemFlags>33</ItemFlags>
+  <SystemFlags>0</SystemFlags>
+  <ItemParams>reason As String</ItemParams>
+  <ItemResult></ItemResult>
+ </Hook>
  <ViewBehavior>
   <ViewProperty>
    <ObjName>Name</ObjName>
@@ -2350,6 +2837,91 @@
   <ItemResult></ItemResult>
  </Method>
  <Method>
+  <ItemName>AppStartSession</ItemName>
+  <Compatibility></Compatibility>
+  <Visible>1</Visible>
+  <PartID>1866447718</PartID>
+  <ItemSource>
+   <TextEncoding>134217984</TextEncoding>
+   <SourceLine>Sub AppStartSession()</SourceLine>
+   <SourceLine>// A click on Connect: the next MQTTConnected is the first of the session, and the NodeInfo is due</SourceLine>
+   <SourceLine>mFirstConnectPending = True</SourceLine>
+   <SourceLine>mLastNodeInfo = 0</SourceLine>
+   <SourceLine>End Sub</SourceLine>
+  </ItemSource>
+  <TextEncoding>134217984</TextEncoding>
+  <AliasName></AliasName>
+  <ItemFlags>0</ItemFlags>
+  <IsShared>0</IsShared>
+  <ItemParams></ItemParams>
+  <ItemResult></ItemResult>
+ </Method>
+ <Method>
+  <ItemName>AppTakeFirstConnect</ItemName>
+  <Compatibility></Compatibility>
+  <Visible>1</Visible>
+  <PartID>1487342107</PartID>
+  <ItemSource>
+   <TextEncoding>134217984</TextEncoding>
+   <SourceLine>Function AppTakeFirstConnect() As Boolean</SourceLine>
+   <SourceLine>// True for the first MQTTConnected after a click on Connect, False for automatic reconnections</SourceLine>
+   <SourceLine>Dim isFirst As Boolean = mFirstConnectPending</SourceLine>
+   <SourceLine>mFirstConnectPending = False</SourceLine>
+   <SourceLine>Return isFirst</SourceLine>
+   <SourceLine>End Function</SourceLine>
+  </ItemSource>
+  <TextEncoding>134217984</TextEncoding>
+  <AliasName></AliasName>
+  <ItemFlags>0</ItemFlags>
+  <IsShared>0</IsShared>
+  <ItemParams></ItemParams>
+  <ItemResult>Boolean</ItemResult>
+ </Method>
+ <Method>
+  <ItemName>AppHasConnected</ItemName>
+  <Compatibility></Compatibility>
+  <Visible>1</Visible>
+  <PartID>119140175</PartID>
+  <ItemSource>
+   <TextEncoding>134217984</TextEncoding>
+   <SourceLine>Function AppHasConnected() As Boolean</SourceLine>
+   <SourceLine>// True once the broker has accepted a connection in this session (since the last click on Connect)</SourceLine>
+   <SourceLine>Return Not mFirstConnectPending</SourceLine>
+   <SourceLine>End Function</SourceLine>
+  </ItemSource>
+  <TextEncoding>134217984</TextEncoding>
+  <AliasName></AliasName>
+  <ItemFlags>0</ItemFlags>
+  <IsShared>0</IsShared>
+  <ItemParams></ItemParams>
+  <ItemResult>Boolean</ItemResult>
+ </Method>
+ <Method>
+  <ItemName>AppNodeInfoDue</ItemName>
+  <Compatibility></Compatibility>
+  <Visible>1</Visible>
+  <PartID>1553380134</PartID>
+  <ItemSource>
+   <TextEncoding>134217984</TextEncoding>
+   <SourceLine>Function AppNodeInfoDue() As Boolean</SourceLine>
+   <SourceLine>// The NodeInfo goes out at the first connection of a session, then at most once an hour,</SourceLine>
+   <SourceLine>// so that a flapping connection doesn't spam the mesh (nodes send theirs about every 3 hours)</SourceLine>
+   <SourceLine>Dim t As Double = System.Microseconds / 1000000</SourceLine>
+   <SourceLine>If mLastNodeInfo = 0 Or t - mLastNodeInfo &gt;= 3600 Then</SourceLine>
+   <SourceLine>mLastNodeInfo = t</SourceLine>
+   <SourceLine>Return True</SourceLine>
+   <SourceLine>End If</SourceLine>
+   <SourceLine>Return False</SourceLine>
+   <SourceLine>End Function</SourceLine>
+  </ItemSource>
+  <TextEncoding>134217984</TextEncoding>
+  <AliasName></AliasName>
+  <ItemFlags>0</ItemFlags>
+  <IsShared>0</IsShared>
+  <ItemParams></ItemParams>
+  <ItemResult>Boolean</ItemResult>
+ </Method>
+ <Method>
   <ItemName>AppResetLogStart</ItemName>
   <Compatibility></Compatibility>
   <Visible>1</Visible>
@@ -2448,6 +3020,36 @@
   </ItemSource>
   <TextEncoding>134217984</TextEncoding>
   <ItemDeclaration>mLogStarted As DateTime</ItemDeclaration>
+  <ItemFlags>33</ItemFlags>
+  <IsShared>0</IsShared>
+ </Property>
+ <Property>
+  <ItemName>mFirstConnectPending</ItemName>
+  <Compatibility></Compatibility>
+  <Visible>1</Visible>
+  <PartID>111091932</PartID>
+  <ItemSource>
+   <TextEncoding>134217984</TextEncoding>
+   <SourceLine>mFirstConnectPending As Boolean</SourceLine>
+   <SourceLine></SourceLine>
+  </ItemSource>
+  <TextEncoding>134217984</TextEncoding>
+  <ItemDeclaration>mFirstConnectPending As Boolean</ItemDeclaration>
+  <ItemFlags>33</ItemFlags>
+  <IsShared>0</IsShared>
+ </Property>
+ <Property>
+  <ItemName>mLastNodeInfo</ItemName>
+  <Compatibility></Compatibility>
+  <Visible>1</Visible>
+  <PartID>1569711000</PartID>
+  <ItemSource>
+   <TextEncoding>134217984</TextEncoding>
+   <SourceLine>mLastNodeInfo As Double</SourceLine>
+   <SourceLine></SourceLine>
+  </ItemSource>
+  <TextEncoding>134217984</TextEncoding>
+  <ItemDeclaration>mLastNodeInfo As Double</ItemDeclaration>
   <ItemFlags>33</ItemFlags>
   <IsShared>0</IsShared>
  </Property>
@@ -7364,10 +7966,17 @@
    <SourceLine>Next</SourceLine>
    <SourceLine>mDedupe = False</SourceLine>
    <SourceLine>mHexDump = False</SourceLine>
+   <SourceLine>// options.reconnect (default on), reconnect_max_delay (s, default 60), reconnect_give_up (s, default 900 = 15 minutes)</SourceLine>
+   <SourceLine>mReconnect = True</SourceLine>
+   <SourceLine>mReconnectMaxDelay = 60</SourceLine>
+   <SourceLine>mReconnectGiveUp = 900</SourceLine>
    <SourceLine>If config.HasKey("options") Then</SourceLine>
    <SourceLine>Dim options As JSONItem = JSONItem(config.Value("options").ObjectValue)</SourceLine>
    <SourceLine>If options.HasKey("dedupe") Then mDedupe = options.Value("dedupe").BooleanValue</SourceLine>
    <SourceLine>If options.HasKey("hexdump") Then mHexDump = options.Value("hexdump").BooleanValue</SourceLine>
+   <SourceLine>If options.HasKey("reconnect") Then mReconnect = options.Value("reconnect").BooleanValue</SourceLine>
+   <SourceLine>If options.HasKey("reconnect_max_delay") Then mReconnectMaxDelay = options.Value("reconnect_max_delay").IntegerValue</SourceLine>
+   <SourceLine>If options.HasKey("reconnect_give_up") Then mReconnectGiveUp = options.Value("reconnect_give_up").IntegerValue</SourceLine>
    <SourceLine>End If</SourceLine>
    <SourceLine>mHasNode = False</SourceLine>
    <SourceLine>If config.HasKey("node") Then</SourceLine>
@@ -7789,6 +8398,60 @@
   <ItemParams></ItemParams>
   <ItemResult>String</ItemResult>
  </Method>
+ <Method>
+  <ItemName>AppReconnect</ItemName>
+  <Compatibility></Compatibility>
+  <Visible>1</Visible>
+  <PartID>827215492</PartID>
+  <ItemSource>
+   <TextEncoding>134217984</TextEncoding>
+   <SourceLine>Function AppReconnect() As Boolean</SourceLine>
+   <SourceLine>Return mReconnect</SourceLine>
+   <SourceLine>End Function</SourceLine>
+  </ItemSource>
+  <TextEncoding>134217984</TextEncoding>
+  <AliasName></AliasName>
+  <ItemFlags>0</ItemFlags>
+  <IsShared>0</IsShared>
+  <ItemParams></ItemParams>
+  <ItemResult>Boolean</ItemResult>
+ </Method>
+ <Method>
+  <ItemName>AppReconnectMaxDelay</ItemName>
+  <Compatibility></Compatibility>
+  <Visible>1</Visible>
+  <PartID>302869693</PartID>
+  <ItemSource>
+   <TextEncoding>134217984</TextEncoding>
+   <SourceLine>Function AppReconnectMaxDelay() As Integer</SourceLine>
+   <SourceLine>Return mReconnectMaxDelay</SourceLine>
+   <SourceLine>End Function</SourceLine>
+  </ItemSource>
+  <TextEncoding>134217984</TextEncoding>
+  <AliasName></AliasName>
+  <ItemFlags>0</ItemFlags>
+  <IsShared>0</IsShared>
+  <ItemParams></ItemParams>
+  <ItemResult>Integer</ItemResult>
+ </Method>
+ <Method>
+  <ItemName>AppReconnectGiveUp</ItemName>
+  <Compatibility></Compatibility>
+  <Visible>1</Visible>
+  <PartID>1230863806</PartID>
+  <ItemSource>
+   <TextEncoding>134217984</TextEncoding>
+   <SourceLine>Function AppReconnectGiveUp() As Integer</SourceLine>
+   <SourceLine>Return mReconnectGiveUp</SourceLine>
+   <SourceLine>End Function</SourceLine>
+  </ItemSource>
+  <TextEncoding>134217984</TextEncoding>
+  <AliasName></AliasName>
+  <ItemFlags>0</ItemFlags>
+  <IsShared>0</IsShared>
+  <ItemParams></ItemParams>
+  <ItemResult>Integer</ItemResult>
+ </Method>
  <Property>
   <ItemName>mConfigPath</ItemName>
   <Compatibility></Compatibility>
@@ -8041,6 +8704,51 @@
   </ItemSource>
   <TextEncoding>134217984</TextEncoding>
   <ItemDeclaration>mNodeRoot As String</ItemDeclaration>
+  <ItemFlags>33</ItemFlags>
+  <IsShared>0</IsShared>
+ </Property>
+ <Property>
+  <ItemName>mReconnect</ItemName>
+  <Compatibility></Compatibility>
+  <Visible>1</Visible>
+  <PartID>1862691101</PartID>
+  <ItemSource>
+   <TextEncoding>134217984</TextEncoding>
+   <SourceLine>mReconnect As Boolean</SourceLine>
+   <SourceLine></SourceLine>
+  </ItemSource>
+  <TextEncoding>134217984</TextEncoding>
+  <ItemDeclaration>mReconnect As Boolean</ItemDeclaration>
+  <ItemFlags>33</ItemFlags>
+  <IsShared>0</IsShared>
+ </Property>
+ <Property>
+  <ItemName>mReconnectMaxDelay</ItemName>
+  <Compatibility></Compatibility>
+  <Visible>1</Visible>
+  <PartID>983025233</PartID>
+  <ItemSource>
+   <TextEncoding>134217984</TextEncoding>
+   <SourceLine>mReconnectMaxDelay As Integer</SourceLine>
+   <SourceLine></SourceLine>
+  </ItemSource>
+  <TextEncoding>134217984</TextEncoding>
+  <ItemDeclaration>mReconnectMaxDelay As Integer</ItemDeclaration>
+  <ItemFlags>33</ItemFlags>
+  <IsShared>0</IsShared>
+ </Property>
+ <Property>
+  <ItemName>mReconnectGiveUp</ItemName>
+  <Compatibility></Compatibility>
+  <Visible>1</Visible>
+  <PartID>768866283</PartID>
+  <ItemSource>
+   <TextEncoding>134217984</TextEncoding>
+   <SourceLine>mReconnectGiveUp As Integer</SourceLine>
+   <SourceLine></SourceLine>
+  </ItemSource>
+  <TextEncoding>134217984</TextEncoding>
+  <ItemDeclaration>mReconnectGiveUp As Integer</ItemDeclaration>
   <ItemFlags>33</ItemFlags>
   <IsShared>0</IsShared>
  </Property>
@@ -8668,66 +9376,6 @@
  <ItemFlags>1</ItemFlags>
  <IsInterface>0</IsInterface>
  <Compatibility></Compatibility>
- <Property>
-  <ItemName>mToField</ItemName>
-  <Compatibility></Compatibility>
-  <Visible>1</Visible>
-  <PartID>1495707160</PartID>
-  <ItemSource>
-   <TextEncoding>134217984</TextEncoding>
-   <SourceLine>mToField As DesktopTextField</SourceLine>
-   <SourceLine></SourceLine>
-  </ItemSource>
-  <TextEncoding>134217984</TextEncoding>
-  <ItemDeclaration>mToField As DesktopTextField</ItemDeclaration>
-  <ItemFlags>33</ItemFlags>
-  <IsShared>0</IsShared>
- </Property>
- <Property>
-  <ItemName>mChannelMenu</ItemName>
-  <Compatibility></Compatibility>
-  <Visible>1</Visible>
-  <PartID>2089997803</PartID>
-  <ItemSource>
-   <TextEncoding>134217984</TextEncoding>
-   <SourceLine>mChannelMenu As DesktopPopupMenu</SourceLine>
-   <SourceLine></SourceLine>
-  </ItemSource>
-  <TextEncoding>134217984</TextEncoding>
-  <ItemDeclaration>mChannelMenu As DesktopPopupMenu</ItemDeclaration>
-  <ItemFlags>33</ItemFlags>
-  <IsShared>0</IsShared>
- </Property>
- <Property>
-  <ItemName>mMessageField</ItemName>
-  <Compatibility></Compatibility>
-  <Visible>1</Visible>
-  <PartID>845594643</PartID>
-  <ItemSource>
-   <TextEncoding>134217984</TextEncoding>
-   <SourceLine>mMessageField As DesktopTextField</SourceLine>
-   <SourceLine></SourceLine>
-  </ItemSource>
-  <TextEncoding>134217984</TextEncoding>
-  <ItemDeclaration>mMessageField As DesktopTextField</ItemDeclaration>
-  <ItemFlags>33</ItemFlags>
-  <IsShared>0</IsShared>
- </Property>
- <Property>
-  <ItemName>mSendButton</ItemName>
-  <Compatibility></Compatibility>
-  <Visible>1</Visible>
-  <PartID>341856361</PartID>
-  <ItemSource>
-   <TextEncoding>134217984</TextEncoding>
-   <SourceLine>mSendButton As DesktopButton</SourceLine>
-   <SourceLine></SourceLine>
-  </ItemSource>
-  <TextEncoding>134217984</TextEncoding>
-  <ItemDeclaration>mSendButton As DesktopButton</ItemDeclaration>
-  <ItemFlags>33</ItemFlags>
-  <IsShared>0</IsShared>
- </Property>
  <Method>
   <ItemName>SendBoxCreate</ItemName>
   <Compatibility></Compatibility>
@@ -8885,6 +9533,10 @@
    <SourceLine>// so direct messages to nodes with a known public key go PKI-encrypted</SourceLine>
    <SourceLine>Dim text As String = mMessageField.Text.Trim</SourceLine>
    <SourceLine>If text = "" Then Return</SourceLine>
+   <SourceLine>If Not Window1.MQTTClient1.IsMQTTConnected Then</SourceLine>
+   <SourceLine>SendBoxReport("  SEND failed: not connected")</SourceLine>
+   <SourceLine>Return</SourceLine>
+   <SourceLine>End If</SourceLine>
    <SourceLine>If Not AppHasNode() Or AppNodeRoot() = "" Then</SourceLine>
    <SourceLine>SendBoxReport("  SEND failed: sending needs node.id and node.root in MQTT_Xojo.config.json")</SourceLine>
    <SourceLine>Return</SourceLine>
@@ -8936,6 +9588,66 @@
   <ItemParams>message As String</ItemParams>
   <ItemResult></ItemResult>
  </Method>
+ <Property>
+  <ItemName>mToField</ItemName>
+  <Compatibility></Compatibility>
+  <Visible>1</Visible>
+  <PartID>1495707160</PartID>
+  <ItemSource>
+   <TextEncoding>134217984</TextEncoding>
+   <SourceLine>mToField As DesktopTextField</SourceLine>
+   <SourceLine></SourceLine>
+  </ItemSource>
+  <TextEncoding>134217984</TextEncoding>
+  <ItemDeclaration>mToField As DesktopTextField</ItemDeclaration>
+  <ItemFlags>33</ItemFlags>
+  <IsShared>0</IsShared>
+ </Property>
+ <Property>
+  <ItemName>mChannelMenu</ItemName>
+  <Compatibility></Compatibility>
+  <Visible>1</Visible>
+  <PartID>2089997803</PartID>
+  <ItemSource>
+   <TextEncoding>134217984</TextEncoding>
+   <SourceLine>mChannelMenu As DesktopPopupMenu</SourceLine>
+   <SourceLine></SourceLine>
+  </ItemSource>
+  <TextEncoding>134217984</TextEncoding>
+  <ItemDeclaration>mChannelMenu As DesktopPopupMenu</ItemDeclaration>
+  <ItemFlags>33</ItemFlags>
+  <IsShared>0</IsShared>
+ </Property>
+ <Property>
+  <ItemName>mMessageField</ItemName>
+  <Compatibility></Compatibility>
+  <Visible>1</Visible>
+  <PartID>845594643</PartID>
+  <ItemSource>
+   <TextEncoding>134217984</TextEncoding>
+   <SourceLine>mMessageField As DesktopTextField</SourceLine>
+   <SourceLine></SourceLine>
+  </ItemSource>
+  <TextEncoding>134217984</TextEncoding>
+  <ItemDeclaration>mMessageField As DesktopTextField</ItemDeclaration>
+  <ItemFlags>33</ItemFlags>
+  <IsShared>0</IsShared>
+ </Property>
+ <Property>
+  <ItemName>mSendButton</ItemName>
+  <Compatibility></Compatibility>
+  <Visible>1</Visible>
+  <PartID>341856361</PartID>
+  <ItemSource>
+   <TextEncoding>134217984</TextEncoding>
+   <SourceLine>mSendButton As DesktopButton</SourceLine>
+   <SourceLine></SourceLine>
+  </ItemSource>
+  <TextEncoding>134217984</TextEncoding>
+  <ItemDeclaration>mSendButton As DesktopButton</ItemDeclaration>
+  <ItemFlags>33</ItemFlags>
+  <IsShared>0</IsShared>
+ </Property>
  <ViewBehavior>
   <ViewProperty>
    <ObjName>Name</ObjName>
