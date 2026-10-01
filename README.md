@@ -61,7 +61,7 @@ Repository: <https://github.com/Kongduino/MQTT_Xojo>
 
 ## Quick start
 
-1. Open `MQTT_Xojo.xojo_xml_project` in Xojo.
+1. Open `MQTT_Xojo.xojo_project` in Xojo.
 2. Copy `MQTT_Xojo.config.example.json` to **`MQTT_Xojo.config.json`**, next to the project, and fill it in (see below). This file holds your password and keys, so `.gitignore` keeps it out of the repository.
 3. Run the app and click **Connect**. The first lines confirm the setup:
 
@@ -174,7 +174,7 @@ These rules come from the firmware's `MQTT.cpp` and `Router.cpp`. Each one silen
 
 ## Using the library in your own project
 
-Copy these into your project:
+Copy the files in `Library/` into your project (drag them into the Xojo navigator):
 
 | Item | Purpose |
 |---|---|
@@ -230,14 +230,30 @@ Sending:
 
 ## Repository layout
 
+The project is in Xojo's text format: one file per class, module or window, so changes are easy to review and items are easy to reuse.
+
 ```
-MQTT_Xojo.xojo_xml_project      the library and the example app (Xojo XML project)
+MQTT_Xojo.xojo_project          the project (open this in Xojo)
+Library/                        the reusable library: copy these files into your own project
+  MQTTClient.xojo_code            MQTT 3.1.1 client (SSLSocket subclass)
+  ProtoReader.xojo_code           protobuf reader (class)
+  ProtoWriter.xojo_code           protobuf writer (module)
+  Curve25519.xojo_code            X25519
+  MeshDecode.xojo_code            packet decoding, summaries, names, duplicate filter
+  MeshJSON.xojo_code              converter-format JSON, Python-identical floats
+  MeshChannels.xojo_code          channel table, PSKs, channel hash, channel decryption
+  MeshCrypto.xojo_code            AES-CTR / CCM, PKI, key store, self-tests
+  MeshSend.xojo_code              downlink: envelopes, NodeInfo, ACKs, JSON requests
+Example App/                    the example desktop app
+  Window1.xojo_window             the window, its MQTTClient1 instance and the buttons
+  AppConfig.xojo_code             reads MQTT_Xojo.config.json
+  SendBox.xojo_code               the Send row (created in code)
+  AppUtils.xojo_code              log, save, publish helpers, ACK tracking
+App.xojo_code, MainMenuBar.xojo_menu, Build Automation.xojo_code
 MQTT_Xojo.config.example.json   copy to MQTT_Xojo.config.json and fill in
 testdata/                       test packets, the converter's reference JSON, and the test tools
 LICENSE                         GPL-3.0
 ```
-
-Inside the project, the example app is `Window1` (the window, with its MQTTClient1 instance and the Connect, Clear and Save logs buttons), `AppConfig` (reads the config file), `SendBox` (the Send row, created in code) and `AppUtils` (hex dump). Everything else is the library.
 
 ## Test tools (`testdata/`)
 
