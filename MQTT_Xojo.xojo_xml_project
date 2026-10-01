@@ -640,7 +640,7 @@
     <SourceLine>Dim problem As String = MeshBuildEnvelope(MeshChannelName(c), AppNodeID(), AppNodeNum(), 4294967295, MeshNewPacketID(), 3, 4, userPayload, envelope)</SourceLine>
     <SourceLine>If problem = "" Then</SourceLine>
     <SourceLine>Dim nodeInfoTopic As String = AppNodeRoot() + "/2/e/" + MeshChannelName(c) + "/" + AppNodeID()</SourceLine>
-    <SourceLine>MQTTClient1.Publish(nodeInfoTopic, envelope)</SourceLine>
+    <SourceLine>Call AppPublish(nodeInfoTopic, envelope, AppSendQoS(), "NodeInfo")</SourceLine>
     <SourceLine>AppLog("  NodeInfo -&gt; " + nodeInfoTopic)</SourceLine>
     <SourceLine>Else</SourceLine>
     <SourceLine>AppLog("  NodeInfo on " + MeshChannelName(c) + " failed: " + problem)</SourceLine>
@@ -670,7 +670,7 @@
     <SourceLine>AppLog(summary)</SourceLine>
     <SourceLine>If jsonText &lt;&gt; "" And topic.IndexOf("/2/e/") &gt;= 0 Then</SourceLine>
     <SourceLine>Dim jsonTopic As String = topic.Replace("/2/e/", "/2/json/")</SourceLine>
-    <SourceLine>MQTTClient1.Publish(jsonTopic, jsonText)</SourceLine>
+    <SourceLine>Call AppPublish(jsonTopic, jsonText, AppJSONQoS(), "") // QoS 1 JSON: only failures are logged</SourceLine>
     <SourceLine>AppLog("  JSON -&gt; " + jsonTopic + ": " + jsonText)</SourceLine>
     <SourceLine>End If</SourceLine>
     <SourceLine>Else</SourceLine>
@@ -679,8 +679,8 @@
     <SourceLine>If AppHasNode() And topic.IndexOf("/2/json/") &gt;= 0 Then</SourceLine>
     <SourceLine>Dim outTopic, outPayload, info As String</SourceLine>
     <SourceLine>If MeshDownlink(topic, payload, AppNodeNum(), AppNodeID(), outTopic, outPayload, info) Then</SourceLine>
-    <SourceLine>MQTTClient1.Publish(outTopic, outPayload)</SourceLine>
-    <SourceLine>AppLog("  SEND -&gt; " + outTopic + ": " + info)</SourceLine>
+    <SourceLine>Call AppPublish(outTopic, outPayload, AppSendQoS(), "SEND")</SourceLine>
+    <SourceLine>AppLog("  SEND -&gt; " + outTopic + " (QoS " + Str(AppSendQoS()) + "): " + info)</SourceLine>
     <SourceLine>ElseIf info &lt;&gt; "" Then</SourceLine>
     <SourceLine>AppLog("  SEND failed: " + info)</SourceLine>
     <SourceLine>End If</SourceLine>
@@ -690,7 +690,35 @@
     <SourceLine>End Sub</SourceLine>
    </ItemSource>
   </HookInstance>
- </ControlBehavior>
+   <HookInstance>
+   <ItemName>PublishAcknowledged</ItemName>
+   <Compatibility></Compatibility>
+   <Visible>1</Visible>
+   <PartID>443659173</PartID>
+   <ItemSource>
+    <TextEncoding>134217984</TextEncoding>
+    <SourceLine>Sub PublishAcknowledged(packetID As Integer)</SourceLine>
+    <SourceLine>// The broker confirmed a QoS 1 publish (the broker, not the mesh). Logged for sends and NodeInfo only</SourceLine>
+    <SourceLine>Dim label As String = AppTakePublishLabel(packetID)</SourceLine>
+    <SourceLine>If label &lt;&gt; "" Then AppLog("  " + label + " confirmed by the broker (packet " + Str(packetID) + ")")</SourceLine>
+    <SourceLine>End Sub</SourceLine>
+   </ItemSource>
+  </HookInstance>
+  <HookInstance>
+   <ItemName>PublishFailed</ItemName>
+   <Compatibility></Compatibility>
+   <Visible>1</Visible>
+   <PartID>667790280</PartID>
+   <ItemSource>
+    <TextEncoding>134217984</TextEncoding>
+    <SourceLine>Sub PublishFailed(packetID As Integer, reason As String)</SourceLine>
+    <SourceLine>Dim label As String = AppTakePublishLabel(packetID)</SourceLine>
+    <SourceLine>If label = "" Then label = "JSON publish"</SourceLine>
+    <SourceLine>AppLog("  " + label + " " + reason + " (packet " + Str(packetID) + ")")</SourceLine>
+    <SourceLine>End Sub</SourceLine>
+   </ItemSource>
+  </HookInstance>
+</ControlBehavior>
  <ControlBehavior>
   <Superclass>DesktopButton</Superclass>
   <HookInstance>
@@ -1244,6 +1272,7 @@
    <SourceLine>If wasConnected Then RaiseEvent MQTTDisconnected</SourceLine>
    <SourceLine>If retry Then RaiseEvent Reconnecting(mReconnectAttempt, mReconnectDelay, reason)</SourceLine>
    <SourceLine>If gaveUp Then RaiseEvent ReconnectFailed(reason)</SourceLine>
+   <SourceLine>If Not retry Then FailPending("not delivered: " + reason)</SourceLine>
    <SourceLine>End Sub</SourceLine>
   </ItemSource>
  </HookInstance>
@@ -1272,6 +1301,7 @@
    <SourceLine>mTLSType = SSLSocket.SSLConnectionTypes.TLSv12</SourceLine>
    <SourceLine>mReconnectMaxDelay = 60</SourceLine>
    <SourceLine>mReconnectGiveUp = 900</SourceLine>
+   <SourceLine>mPendingPubs = New Dictionary</SourceLine>
    <SourceLine>mReconnectTimer = New Timer</SourceLine>
    <SourceLine>mReconnectTimer.RunMode = Timer.RunModes.Off</SourceLine>
    <SourceLine>AddHandler mReconnectTimer.Action, AddressOf ReconnectTimerAction</SourceLine>
@@ -1631,6 +1661,7 @@
    <SourceLine>RaiseEvent MQTTDisconnected</SourceLine>
    <SourceLine>If retry Then RaiseEvent Reconnecting(mReconnectAttempt, mReconnectDelay, reason)</SourceLine>
    <SourceLine>If gaveUp Then RaiseEvent ReconnectFailed(reason)</SourceLine>
+   <SourceLine>If Not retry Then FailPending("not delivered: " + reason)</SourceLine>
    <SourceLine>End Sub</SourceLine>
   </ItemSource>
   <TextEncoding>134217984</TextEncoding>
@@ -1657,6 +1688,7 @@
    <SourceLine>End If</SourceLine>
    <SourceLine>StopKeepAlive</SourceLine>
    <SourceLine>Me.Close</SourceLine>
+   <SourceLine>FailPending("not delivered: disconnected before the broker confirmed it")</SourceLine>
    <SourceLine>End Sub</SourceLine>
   </ItemSource>
   <TextEncoding>134217984</TextEncoding>
@@ -1733,6 +1765,8 @@
    <SourceLine>Select Case packetType</SourceLine>
    <SourceLine>Case 2 // CONNACK</SourceLine>
    <SourceLine>HandleConnAck(body)</SourceLine>
+   <SourceLine>Case 4 // PUBACK (our QoS 1 publishes)</SourceLine>
+   <SourceLine>HandlePubAck(body)</SourceLine>
    <SourceLine>Case 3 // PUBLISH</SourceLine>
    <SourceLine>HandlePublish(pFlags, body)</SourceLine>
    <SourceLine>Case 6 // PUBREL</SourceLine>
@@ -1769,6 +1803,7 @@
    <SourceLine>mReconnectAttempt = 0</SourceLine>
    <SourceLine>mReconnectStarted = 0</SourceLine>
    <SourceLine>StartKeepAlive</SourceLine>
+   <SourceLine>ResendPending</SourceLine>
    <SourceLine>RaiseEvent MQTTConnected(sessionPresent)</SourceLine>
    <SourceLine>Else</SourceLine>
    <SourceLine>// Only "server unavailable" (3) is worth retrying: protocol, identity and credential problems (1, 2, 4, 5)</SourceLine>
@@ -1783,6 +1818,7 @@
    <SourceLine>Me.Close</SourceLine>
    <SourceLine>If retry Then RaiseEvent Reconnecting(mReconnectAttempt, mReconnectDelay, "server unavailable (code 3)")</SourceLine>
    <SourceLine>If gaveUp Then RaiseEvent ReconnectFailed("server unavailable (code 3)")</SourceLine>
+   <SourceLine>If Not retry Then FailPending("not delivered: the broker refused the connection (code " + Str(returnCode) + ")")</SourceLine>
    <SourceLine>End If</SourceLine>
    <SourceLine>End Sub</SourceLine>
   </ItemSource>
@@ -2207,6 +2243,140 @@
   <ItemParams>data As String, startPos As Integer, ByRef bytesUsed As Integer</ItemParams>
   <ItemResult>Integer</ItemResult>
  </Method>
+ <Method>
+  <ItemName>PublishQoS1</ItemName>
+  <Compatibility></Compatibility>
+  <Visible>1</Visible>
+  <PartID>352396630</PartID>
+  <ItemSource>
+   <TextEncoding>134217984</TextEncoding>
+   <SourceLine>Function PublishQoS1(topic As String, payload As String, retain As Boolean = False) As Integer</SourceLine>
+   <SourceLine>// QoS 1 publish: the broker confirms it with PUBACK (event PublishAcknowledged). Messages not yet confirmed are</SourceLine>
+   <SourceLine>// sent again (DUP) after a reconnection; when the connection ends for good, PublishFailed is raised for them.</SourceLine>
+   <SourceLine>// At least once: after a reconnection the broker may receive a message twice. Returns the packet ID, 0 if not sent</SourceLine>
+   <SourceLine>If Not mConnectedMQTT Then</SourceLine>
+   <SourceLine>RaiseEvent Trace("Not connected: publish to " + topic + " skipped")</SourceLine>
+   <SourceLine>Return 0</SourceLine>
+   <SourceLine>End If</SourceLine>
+   <SourceLine>Dim packetID As Integer = NextPacketID()</SourceLine>
+   <SourceLine>Dim guard As Integer = 0</SourceLine>
+   <SourceLine>While mPendingPubs.HasKey(packetID) And guard &lt; 65535</SourceLine>
+   <SourceLine>packetID = NextPacketID()</SourceLine>
+   <SourceLine>guard = guard + 1</SourceLine>
+   <SourceLine>Wend</SourceLine>
+   <SourceLine>Dim body As String = EncodeString(topic) + EncodeUInt16(packetID) + UTF8Bytes(payload)</SourceLine>
+   <SourceLine>Dim firstByte As Integer = &amp;h32</SourceLine>
+   <SourceLine>If retain Then firstByte = firstByte Or &amp;h01</SourceLine>
+   <SourceLine>mPendingPubs.Value(packetID) = String.ChrByte(firstByte) + body</SourceLine>
+   <SourceLine>mPendingOrder.Add(packetID)</SourceLine>
+   <SourceLine>Me.Write(String.ChrByte(firstByte) + EncodeRemainingLength(body.Bytes) + body)</SourceLine>
+   <SourceLine>Return packetID</SourceLine>
+   <SourceLine>End Function</SourceLine>
+  </ItemSource>
+  <TextEncoding>134217984</TextEncoding>
+  <AliasName></AliasName>
+  <ItemFlags>0</ItemFlags>
+  <IsShared>0</IsShared>
+  <ItemParams>topic As String, payload As String, retain As Boolean = False</ItemParams>
+  <ItemResult>Integer</ItemResult>
+ </Method>
+ <Method>
+  <ItemName>PendingCount</ItemName>
+  <Compatibility></Compatibility>
+  <Visible>1</Visible>
+  <PartID>1243939034</PartID>
+  <ItemSource>
+   <TextEncoding>134217984</TextEncoding>
+   <SourceLine>Function PendingCount() As Integer</SourceLine>
+   <SourceLine>// QoS 1 messages sent but not yet confirmed by the broker</SourceLine>
+   <SourceLine>Return mPendingOrder.Count</SourceLine>
+   <SourceLine>End Function</SourceLine>
+  </ItemSource>
+  <TextEncoding>134217984</TextEncoding>
+  <AliasName></AliasName>
+  <ItemFlags>0</ItemFlags>
+  <IsShared>0</IsShared>
+  <ItemParams></ItemParams>
+  <ItemResult>Integer</ItemResult>
+ </Method>
+ <Method>
+  <ItemName>HandlePubAck</ItemName>
+  <Compatibility></Compatibility>
+  <Visible>1</Visible>
+  <PartID>492264567</PartID>
+  <ItemSource>
+   <TextEncoding>134217984</TextEncoding>
+   <SourceLine>Sub HandlePubAck(body As String)</SourceLine>
+   <SourceLine>If body.Bytes &lt; 2 Then Return</SourceLine>
+   <SourceLine>Dim packetID As Integer = Read16(body, 0)</SourceLine>
+   <SourceLine>If Not mPendingPubs.HasKey(packetID) Then Return</SourceLine>
+   <SourceLine>mPendingPubs.Remove(packetID)</SourceLine>
+   <SourceLine>Dim idx As Integer = mPendingOrder.IndexOf(packetID)</SourceLine>
+   <SourceLine>If idx &gt;= 0 Then mPendingOrder.RemoveAt(idx)</SourceLine>
+   <SourceLine>RaiseEvent PublishAcknowledged(packetID)</SourceLine>
+   <SourceLine>End Sub</SourceLine>
+  </ItemSource>
+  <TextEncoding>134217984</TextEncoding>
+  <AliasName></AliasName>
+  <ItemFlags>0</ItemFlags>
+  <IsShared>0</IsShared>
+  <ItemParams>body As String</ItemParams>
+  <ItemResult></ItemResult>
+ </Method>
+ <Method>
+  <ItemName>ResendPending</ItemName>
+  <Compatibility></Compatibility>
+  <Visible>1</Visible>
+  <PartID>2125394887</PartID>
+  <ItemSource>
+   <TextEncoding>134217984</TextEncoding>
+   <SourceLine>Sub ResendPending()</SourceLine>
+   <SourceLine>// After a reconnection: the QoS 1 messages the broker never confirmed go out again, with the DUP flag</SourceLine>
+   <SourceLine>If mPendingOrder.Count = 0 Then Return</SourceLine>
+   <SourceLine>RaiseEvent Trace("Resending " + Str(mPendingOrder.Count) + " unconfirmed message(s)")</SourceLine>
+   <SourceLine>For Each packetID As Integer In mPendingOrder</SourceLine>
+   <SourceLine>Dim stored As String = mPendingPubs.Value(packetID).StringValue</SourceLine>
+   <SourceLine>Dim firstByte As Integer = stored.MiddleBytes(0, 1).AscByte Or &amp;h08</SourceLine>
+   <SourceLine>Dim body As String = stored.MiddleBytes(1, stored.Bytes - 1)</SourceLine>
+   <SourceLine>Me.Write(String.ChrByte(firstByte) + EncodeRemainingLength(body.Bytes) + body)</SourceLine>
+   <SourceLine>Next</SourceLine>
+   <SourceLine>End Sub</SourceLine>
+  </ItemSource>
+  <TextEncoding>134217984</TextEncoding>
+  <AliasName></AliasName>
+  <ItemFlags>0</ItemFlags>
+  <IsShared>0</IsShared>
+  <ItemParams></ItemParams>
+  <ItemResult></ItemResult>
+ </Method>
+ <Method>
+  <ItemName>FailPending</ItemName>
+  <Compatibility></Compatibility>
+  <Visible>1</Visible>
+  <PartID>282123802</PartID>
+  <ItemSource>
+   <TextEncoding>134217984</TextEncoding>
+   <SourceLine>Sub FailPending(reason As String)</SourceLine>
+   <SourceLine>// The connection has ended for good: the messages the broker hasn't confirmed won't be delivered</SourceLine>
+   <SourceLine>If mPendingOrder.Count = 0 Then Return</SourceLine>
+   <SourceLine>Dim failed() As Integer</SourceLine>
+   <SourceLine>For Each packetID As Integer In mPendingOrder</SourceLine>
+   <SourceLine>failed.Add(packetID)</SourceLine>
+   <SourceLine>Next</SourceLine>
+   <SourceLine>mPendingOrder.RemoveAll</SourceLine>
+   <SourceLine>mPendingPubs.RemoveAll</SourceLine>
+   <SourceLine>For Each failedID As Integer In failed</SourceLine>
+   <SourceLine>RaiseEvent PublishFailed(failedID, reason)</SourceLine>
+   <SourceLine>Next</SourceLine>
+   <SourceLine>End Sub</SourceLine>
+  </ItemSource>
+  <TextEncoding>134217984</TextEncoding>
+  <AliasName></AliasName>
+  <ItemFlags>0</ItemFlags>
+  <IsShared>0</IsShared>
+  <ItemParams>reason As String</ItemParams>
+  <ItemResult></ItemResult>
+ </Method>
  <Property>
   <ItemName>mHost</ItemName>
   <Compatibility></Compatibility>
@@ -2597,6 +2767,36 @@
   <ItemFlags>33</ItemFlags>
   <IsShared>0</IsShared>
  </Property>
+ <Property>
+  <ItemName>mPendingPubs</ItemName>
+  <Compatibility></Compatibility>
+  <Visible>1</Visible>
+  <PartID>2122863430</PartID>
+  <ItemSource>
+   <TextEncoding>134217984</TextEncoding>
+   <SourceLine>mPendingPubs As Dictionary</SourceLine>
+   <SourceLine></SourceLine>
+  </ItemSource>
+  <TextEncoding>134217984</TextEncoding>
+  <ItemDeclaration>mPendingPubs As Dictionary</ItemDeclaration>
+  <ItemFlags>33</ItemFlags>
+  <IsShared>0</IsShared>
+ </Property>
+ <Property>
+  <ItemName>mPendingOrder()</ItemName>
+  <Compatibility></Compatibility>
+  <Visible>1</Visible>
+  <PartID>1572025294</PartID>
+  <ItemSource>
+   <TextEncoding>134217984</TextEncoding>
+   <SourceLine>mPendingOrder() As Integer</SourceLine>
+   <SourceLine></SourceLine>
+  </ItemSource>
+  <TextEncoding>134217984</TextEncoding>
+  <ItemDeclaration>mPendingOrder() As Integer</ItemDeclaration>
+  <ItemFlags>33</ItemFlags>
+  <IsShared>0</IsShared>
+ </Property>
  <Hook>
   <ItemName>MQTTConnected</ItemName>
   <TextEncoding>134217984</TextEncoding>
@@ -2683,6 +2883,22 @@
   <ItemFlags>33</ItemFlags>
   <SystemFlags>0</SystemFlags>
   <ItemParams>reason As String</ItemParams>
+  <ItemResult></ItemResult>
+ </Hook>
+ <Hook>
+  <ItemName>PublishAcknowledged</ItemName>
+  <TextEncoding>134217984</TextEncoding>
+  <ItemFlags>33</ItemFlags>
+  <SystemFlags>0</SystemFlags>
+  <ItemParams>packetID As Integer</ItemParams>
+  <ItemResult></ItemResult>
+ </Hook>
+ <Hook>
+  <ItemName>PublishFailed</ItemName>
+  <TextEncoding>134217984</TextEncoding>
+  <ItemFlags>33</ItemFlags>
+  <SystemFlags>0</SystemFlags>
+  <ItemParams>packetID As Integer, reason As String</ItemParams>
   <ItemResult></ItemResult>
  </Hook>
  <ViewBehavior>
@@ -3008,6 +3224,58 @@
   <ItemParams>logText As String</ItemParams>
   <ItemResult>String</ItemResult>
  </Method>
+ <Method>
+  <ItemName>AppPublish</ItemName>
+  <Compatibility></Compatibility>
+  <Visible>1</Visible>
+  <PartID>1003518926</PartID>
+  <ItemSource>
+   <TextEncoding>134217984</TextEncoding>
+   <SourceLine>Function AppPublish(topic As String, payload As String, qos As Integer, label As String) As Integer</SourceLine>
+   <SourceLine>// Publishes with the given QoS. For QoS 1 the label ("SEND", "NodeInfo", or "" for JSON) is kept until the</SourceLine>
+   <SourceLine>// broker confirms (PublishAcknowledged) or the message is lost (PublishFailed). Returns the packet ID (0 for QoS 0)</SourceLine>
+   <SourceLine>If qos &lt;&gt; 1 Then</SourceLine>
+   <SourceLine>Window1.MQTTClient1.Publish(topic, payload)</SourceLine>
+   <SourceLine>Return 0</SourceLine>
+   <SourceLine>End If</SourceLine>
+   <SourceLine>Dim packetID As Integer = Window1.MQTTClient1.PublishQoS1(topic, payload)</SourceLine>
+   <SourceLine>If packetID &gt; 0 Then</SourceLine>
+   <SourceLine>If mPublishLabels = Nil Then mPublishLabels = New Dictionary</SourceLine>
+   <SourceLine>mPublishLabels.Value(packetID) = label</SourceLine>
+   <SourceLine>End If</SourceLine>
+   <SourceLine>Return packetID</SourceLine>
+   <SourceLine>End Function</SourceLine>
+  </ItemSource>
+  <TextEncoding>134217984</TextEncoding>
+  <AliasName></AliasName>
+  <ItemFlags>0</ItemFlags>
+  <IsShared>0</IsShared>
+  <ItemParams>topic As String, payload As String, qos As Integer, label As String</ItemParams>
+  <ItemResult>Integer</ItemResult>
+ </Method>
+ <Method>
+  <ItemName>AppTakePublishLabel</ItemName>
+  <Compatibility></Compatibility>
+  <Visible>1</Visible>
+  <PartID>294386246</PartID>
+  <ItemSource>
+   <TextEncoding>134217984</TextEncoding>
+   <SourceLine>Function AppTakePublishLabel(packetID As Integer) As String</SourceLine>
+   <SourceLine>// The label of a QoS 1 publish, removed once used ("" if unknown)</SourceLine>
+   <SourceLine>If mPublishLabels = Nil Then Return ""</SourceLine>
+   <SourceLine>If Not mPublishLabels.HasKey(packetID) Then Return ""</SourceLine>
+   <SourceLine>Dim label As String = mPublishLabels.Value(packetID).StringValue</SourceLine>
+   <SourceLine>mPublishLabels.Remove(packetID)</SourceLine>
+   <SourceLine>Return label</SourceLine>
+   <SourceLine>End Function</SourceLine>
+  </ItemSource>
+  <TextEncoding>134217984</TextEncoding>
+  <AliasName></AliasName>
+  <ItemFlags>0</ItemFlags>
+  <IsShared>0</IsShared>
+  <ItemParams>packetID As Integer</ItemParams>
+  <ItemResult>String</ItemResult>
+ </Method>
  <Property>
   <ItemName>mLogStarted</ItemName>
   <Compatibility></Compatibility>
@@ -3050,6 +3318,21 @@
   </ItemSource>
   <TextEncoding>134217984</TextEncoding>
   <ItemDeclaration>mLastNodeInfo As Double</ItemDeclaration>
+  <ItemFlags>33</ItemFlags>
+  <IsShared>0</IsShared>
+ </Property>
+ <Property>
+  <ItemName>mPublishLabels</ItemName>
+  <Compatibility></Compatibility>
+  <Visible>1</Visible>
+  <PartID>248229428</PartID>
+  <ItemSource>
+   <TextEncoding>134217984</TextEncoding>
+   <SourceLine>mPublishLabels As Dictionary</SourceLine>
+   <SourceLine></SourceLine>
+  </ItemSource>
+  <TextEncoding>134217984</TextEncoding>
+  <ItemDeclaration>mPublishLabels As Dictionary</ItemDeclaration>
   <ItemFlags>33</ItemFlags>
   <IsShared>0</IsShared>
  </Property>
@@ -7970,6 +8253,10 @@
    <SourceLine>mReconnect = True</SourceLine>
    <SourceLine>mReconnectMaxDelay = 60</SourceLine>
    <SourceLine>mReconnectGiveUp = 900</SourceLine>
+   <SourceLine>// options.send_qos: QoS of our sends and NodeInfo (default 1, confirmed by the broker);</SourceLine>
+   <SourceLine>// options.json_qos: QoS of the JSON republished for every received packet (default 0)</SourceLine>
+   <SourceLine>mSendQoS = 1</SourceLine>
+   <SourceLine>mJSONQoS = 0</SourceLine>
    <SourceLine>If config.HasKey("options") Then</SourceLine>
    <SourceLine>Dim options As JSONItem = JSONItem(config.Value("options").ObjectValue)</SourceLine>
    <SourceLine>If options.HasKey("dedupe") Then mDedupe = options.Value("dedupe").BooleanValue</SourceLine>
@@ -7977,6 +8264,9 @@
    <SourceLine>If options.HasKey("reconnect") Then mReconnect = options.Value("reconnect").BooleanValue</SourceLine>
    <SourceLine>If options.HasKey("reconnect_max_delay") Then mReconnectMaxDelay = options.Value("reconnect_max_delay").IntegerValue</SourceLine>
    <SourceLine>If options.HasKey("reconnect_give_up") Then mReconnectGiveUp = options.Value("reconnect_give_up").IntegerValue</SourceLine>
+   <SourceLine>If options.HasKey("send_qos") Then mSendQoS = options.Value("send_qos").IntegerValue</SourceLine>
+   <SourceLine>If options.HasKey("json_qos") Then mJSONQoS = options.Value("json_qos").IntegerValue</SourceLine>
+   <SourceLine>If mSendQoS &lt; 0 Or mSendQoS &gt; 1 Or mJSONQoS &lt; 0 Or mJSONQoS &gt; 1 Then Return "options.send_qos and options.json_qos must be 0 or 1 in " + mConfigPath</SourceLine>
    <SourceLine>End If</SourceLine>
    <SourceLine>mHasNode = False</SourceLine>
    <SourceLine>If config.HasKey("node") Then</SourceLine>
@@ -8452,6 +8742,42 @@
   <ItemParams></ItemParams>
   <ItemResult>Integer</ItemResult>
  </Method>
+ <Method>
+  <ItemName>AppSendQoS</ItemName>
+  <Compatibility></Compatibility>
+  <Visible>1</Visible>
+  <PartID>157918302</PartID>
+  <ItemSource>
+   <TextEncoding>134217984</TextEncoding>
+   <SourceLine>Function AppSendQoS() As Integer</SourceLine>
+   <SourceLine>Return mSendQoS</SourceLine>
+   <SourceLine>End Function</SourceLine>
+  </ItemSource>
+  <TextEncoding>134217984</TextEncoding>
+  <AliasName></AliasName>
+  <ItemFlags>0</ItemFlags>
+  <IsShared>0</IsShared>
+  <ItemParams></ItemParams>
+  <ItemResult>Integer</ItemResult>
+ </Method>
+ <Method>
+  <ItemName>AppJSONQoS</ItemName>
+  <Compatibility></Compatibility>
+  <Visible>1</Visible>
+  <PartID>2133987570</PartID>
+  <ItemSource>
+   <TextEncoding>134217984</TextEncoding>
+   <SourceLine>Function AppJSONQoS() As Integer</SourceLine>
+   <SourceLine>Return mJSONQoS</SourceLine>
+   <SourceLine>End Function</SourceLine>
+  </ItemSource>
+  <TextEncoding>134217984</TextEncoding>
+  <AliasName></AliasName>
+  <ItemFlags>0</ItemFlags>
+  <IsShared>0</IsShared>
+  <ItemParams></ItemParams>
+  <ItemResult>Integer</ItemResult>
+ </Method>
  <Property>
   <ItemName>mConfigPath</ItemName>
   <Compatibility></Compatibility>
@@ -8749,6 +9075,36 @@
   </ItemSource>
   <TextEncoding>134217984</TextEncoding>
   <ItemDeclaration>mReconnectGiveUp As Integer</ItemDeclaration>
+  <ItemFlags>33</ItemFlags>
+  <IsShared>0</IsShared>
+ </Property>
+ <Property>
+  <ItemName>mSendQoS</ItemName>
+  <Compatibility></Compatibility>
+  <Visible>1</Visible>
+  <PartID>903114690</PartID>
+  <ItemSource>
+   <TextEncoding>134217984</TextEncoding>
+   <SourceLine>mSendQoS As Integer</SourceLine>
+   <SourceLine></SourceLine>
+  </ItemSource>
+  <TextEncoding>134217984</TextEncoding>
+  <ItemDeclaration>mSendQoS As Integer</ItemDeclaration>
+  <ItemFlags>33</ItemFlags>
+  <IsShared>0</IsShared>
+ </Property>
+ <Property>
+  <ItemName>mJSONQoS</ItemName>
+  <Compatibility></Compatibility>
+  <Visible>1</Visible>
+  <PartID>143586406</PartID>
+  <ItemSource>
+   <TextEncoding>134217984</TextEncoding>
+   <SourceLine>mJSONQoS As Integer</SourceLine>
+   <SourceLine></SourceLine>
+  </ItemSource>
+  <TextEncoding>134217984</TextEncoding>
+  <ItemDeclaration>mJSONQoS As Integer</ItemDeclaration>
   <ItemFlags>33</ItemFlags>
   <IsShared>0</IsShared>
  </Property>
@@ -9554,8 +9910,8 @@
    <SourceLine>Dim requestTopic As String = AppNodeRoot() + "/2/json/" + channelName + "/ui"</SourceLine>
    <SourceLine>Dim outTopic, outPayload, info As String</SourceLine>
    <SourceLine>If MeshDownlink(requestTopic, request.ToString, AppNodeNum(), AppNodeID(), outTopic, outPayload, info) Then</SourceLine>
-   <SourceLine>Window1.MQTTClient1.Publish(outTopic, outPayload)</SourceLine>
-   <SourceLine>SendBoxReport("  SEND -&gt; " + outTopic + ": " + info)</SourceLine>
+   <SourceLine>Call AppPublish(outTopic, outPayload, AppSendQoS(), "SEND")</SourceLine>
+   <SourceLine>SendBoxReport("  SEND -&gt; " + outTopic + " (QoS " + Str(AppSendQoS()) + "): " + info)</SourceLine>
    <SourceLine>mMessageField.Text = ""</SourceLine>
    <SourceLine>Else</SourceLine>
    <SourceLine>If info = "" Then info = "not sent"</SourceLine>
