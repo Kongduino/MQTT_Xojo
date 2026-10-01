@@ -132,6 +132,7 @@ mosquitto_pub -h … -t "msh/EU_868/2/json/LongFast/me" -m '{"type":"sendpositio
 - `sendposition`: `latitude` / `longitude` in degrees, or `latitude_i` / `longitude_i` (1e-7 degrees, which take precedence), plus `altitude` and `time`.
 - Optional fields:
   - `to` (a number or `"!aabbccdd"`; broadcast if omitted)
+  - `want_ack` (default true for direct messages, ignored for broadcasts): ask the destination node for a delivery confirmation
   - `from` (defaults to the virtual node)
   - `id` (random if omitted)
   - `hopLimit` / `hop_limit` (0–7, default 3)
@@ -139,6 +140,8 @@ mosquitto_pub -h … -t "msh/EU_868/2/json/LongFast/me" -m '{"type":"sendpositio
   - `pki` (`true` / `false` to force the encryption mode)
 - The packet is published on `<root>/2/e/<channel>/<node id>`, or `<root>/2/e/PKI/<node id>` for PKI DMs. The window shows `SEND -> topic: …` or `SEND failed: <reason>`.
 - JSON whose `type` doesn't start with `send` (including the app's own uplink JSON) is ignored, so there's no loop.
+
+**Delivery confirmation:** a direct message asks the destination node for an acknowledgement (Meshtastic `want_ack`). The log then shows `DELIVERED: DM to !aabbccdd acknowledged by !aabbccdd`, or `NOT DELIVERED: … NO_ROUTE (reported by !…)` with the firmware's reason, or `No acknowledgement … within 2 minutes`. In the other direction, when a node DMs the virtual node with `want_ack`, the app answers with an ACK, like a node does (`ACK sent to !aabbccdd`).
 
 ### What a gateway needs to accept downlink
 
@@ -266,6 +269,7 @@ A typical run:
 - MQTT: outgoing publishes at QoS 0 or 1 (no QoS 2). QoS 1 is "at least once": after a reconnect the broker may receive a message twice, which Meshtastic nodes ignore as a duplicate packet id. Messages sent while disconnected aren't queued (`SEND failed: not connected`).
 - A QoS 1 confirmation only means the broker received the message. Confirmation from the destination node (Meshtastic `want_ack`) isn't implemented.
 - PKI DMs can only be read when they're to or from the virtual node, since only its private key is known.
+- **Firmware 2.8 gateways don't upload PKI DMs to the virtual node.** The DM is relayed over LoRa, but never published to MQTT: 2.8 classifies a packet it can't decrypt as `OPAQUE_RELAY_ONLY` and relays it without handling it (`Router.cpp`, routing-auth verdict), so it never reaches the MQTT uplink. Firmware 2.7 uploaded these. Sending DMs to the mesh, and their delivery ACKs, are not affected.
 - JSON passthrough of text messages handles objects, arrays, numbers, `true`/`false`/`null`, but not a bare JSON string literal. A float inside such JSON that is smaller than about 0.01 with a full 53-bit mantissa falls back to Xojo's `ToString` instead of Python's exact formatting.
 - Compressed text (portnum 7) isn't decoded, and the official converter doesn't decode it either.
 

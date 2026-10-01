@@ -668,6 +668,8 @@
     <SourceLine>// options.dedupe: a packet already seen (same sender and id) is neither shown nor republished</SourceLine>
     <SourceLine>If AppDedupe() And MeshSeenRecently(packetKey) Then Return</SourceLine>
     <SourceLine>AppLog(summary)</SourceLine>
+    <SourceLine>AppCheckRouting // after the packet line: an ACK / NAK for one of our direct messages</SourceLine>
+    <SourceLine>AppAnswerAckRequest // a message to our node that asks for an ACK</SourceLine>
     <SourceLine>If jsonText &lt;&gt; "" And topic.IndexOf("/2/e/") &gt;= 0 Then</SourceLine>
     <SourceLine>Dim jsonTopic As String = topic.Replace("/2/e/", "/2/json/")</SourceLine>
     <SourceLine>Call AppPublish(jsonTopic, jsonText, AppJSONQoS(), "") // QoS 1 JSON: only failures are logged</SourceLine>
@@ -678,9 +680,12 @@
     <SourceLine>// Downlink: a "send..." JSON on .../2/json/&lt;channel&gt;/... becomes a protobuf packet on .../2/e/&lt;channel&gt;/&lt;node id&gt;</SourceLine>
     <SourceLine>If AppHasNode() And topic.IndexOf("/2/json/") &gt;= 0 Then</SourceLine>
     <SourceLine>Dim outTopic, outPayload, info As String</SourceLine>
-    <SourceLine>If MeshDownlink(topic, payload, AppNodeNum(), AppNodeID(), outTopic, outPayload, info) Then</SourceLine>
+    <SourceLine>Dim sentID, sentTo As UInt32</SourceLine>
+    <SourceLine>Dim ackRequested As Boolean</SourceLine>
+    <SourceLine>If MeshDownlink(topic, payload, AppNodeNum(), AppNodeID(), outTopic, outPayload, info, sentID, sentTo, ackRequested) Then</SourceLine>
     <SourceLine>Call AppPublish(outTopic, outPayload, AppSendQoS(), "SEND")</SourceLine>
     <SourceLine>AppLog("  SEND -&gt; " + outTopic + " (QoS " + Str(AppSendQoS()) + "): " + info)</SourceLine>
+    <SourceLine>If ackRequested Then AppExpectAck(sentID, sentTo, "DM to " + MeshNodeID(sentTo))</SourceLine>
     <SourceLine>ElseIf info &lt;&gt; "" Then</SourceLine>
     <SourceLine>AppLog("  SEND failed: " + info)</SourceLine>
     <SourceLine>End If</SourceLine>
@@ -3202,7 +3207,7 @@
    <SourceLine>header.Add("Log started: " + AppTimeStamp(mLogStarted))</SourceLine>
    <SourceLine>header.Add("Log saved:   " + AppTimeStamp(savedAt))</SourceLine>
    <SourceLine>If AppConfigPath() &lt;&gt; "" Then header.Add("Configuration: " + AppConfigPath())</SourceLine>
-   <SourceLine>If AppHost() &lt;&gt; "" Then header.Add("Broker: " + AppHost() + ":" + Str(AppPort()))</SourceLine>
+   <SourceLine>If AppHost() &lt;&gt; "" Then header.Add("Broker: " + AppBrokerDescription())</SourceLine>
    <SourceLine>header.Add("----------------------------------------------------------------")</SourceLine>
    <SourceLine>Dim body As String = logText.ReplaceLineEndings(EndOfLine)</SourceLine>
    <SourceLine>Try</SourceLine>
@@ -3276,6 +3281,158 @@
   <ItemParams>packetID As Integer</ItemParams>
   <ItemResult>String</ItemResult>
  </Method>
+ <Method>
+  <ItemName>AppExpectAck</ItemName>
+  <Compatibility></Compatibility>
+  <Visible>1</Visible>
+  <PartID>809005900</PartID>
+  <ItemSource>
+   <TextEncoding>134217984</TextEncoding>
+   <SourceLine>Sub AppExpectAck(packetID As UInt32, toNode As UInt32, label As String)</SourceLine>
+   <SourceLine>// A message sent with want_ack: wait up to 2 minutes for the destination's ROUTING ACK</SourceLine>
+   <SourceLine>If mAckLabels = Nil Then</SourceLine>
+   <SourceLine>mAckLabels = New Dictionary</SourceLine>
+   <SourceLine>mAckTimes = New Dictionary</SourceLine>
+   <SourceLine>mAckTargets = New Dictionary</SourceLine>
+   <SourceLine>End If</SourceLine>
+   <SourceLine>Dim k As String = packetID.ToString</SourceLine>
+   <SourceLine>mAckLabels.Value(k) = label</SourceLine>
+   <SourceLine>mAckTimes.Value(k) = System.Microseconds / 1000000</SourceLine>
+   <SourceLine>Dim target As Int64 = toNode</SourceLine>
+   <SourceLine>mAckTargets.Value(k) = target</SourceLine>
+   <SourceLine>If mAckTimer = Nil Then</SourceLine>
+   <SourceLine>mAckTimer = New Timer</SourceLine>
+   <SourceLine>mAckTimer.Period = 10000</SourceLine>
+   <SourceLine>AddHandler mAckTimer.Action, AddressOf AppAckTimerAction</SourceLine>
+   <SourceLine>End If</SourceLine>
+   <SourceLine>mAckTimer.RunMode = Timer.RunModes.Multiple</SourceLine>
+   <SourceLine>End Sub</SourceLine>
+  </ItemSource>
+  <TextEncoding>134217984</TextEncoding>
+  <AliasName></AliasName>
+  <ItemFlags>0</ItemFlags>
+  <IsShared>0</IsShared>
+  <ItemParams>packetID As UInt32, toNode As UInt32, label As String</ItemParams>
+  <ItemResult></ItemResult>
+ </Method>
+ <Method>
+  <ItemName>AppForgetAck</ItemName>
+  <Compatibility></Compatibility>
+  <Visible>1</Visible>
+  <PartID>1997480238</PartID>
+  <ItemSource>
+   <TextEncoding>134217984</TextEncoding>
+   <SourceLine>Sub AppForgetAck(k As String)</SourceLine>
+   <SourceLine>mAckLabels.Remove(k)</SourceLine>
+   <SourceLine>mAckTimes.Remove(k)</SourceLine>
+   <SourceLine>mAckTargets.Remove(k)</SourceLine>
+   <SourceLine>End Sub</SourceLine>
+  </ItemSource>
+  <TextEncoding>134217984</TextEncoding>
+  <AliasName></AliasName>
+  <ItemFlags>0</ItemFlags>
+  <IsShared>0</IsShared>
+  <ItemParams>k As String</ItemParams>
+  <ItemResult></ItemResult>
+ </Method>
+ <Method>
+  <ItemName>AppCheckRouting</ItemName>
+  <Compatibility></Compatibility>
+  <Visible>1</Visible>
+  <PartID>1054003798</PartID>
+  <ItemSource>
+   <TextEncoding>134217984</TextEncoding>
+   <SourceLine>Sub AppCheckRouting()</SourceLine>
+   <SourceLine>// After MeshPacketSummary: a ROUTING ACK / NAK for one of our messages ends its wait. Only the destination</SourceLine>
+   <SourceLine>// sends a real ACK for a direct message (relays send NAKs, e.g. MAX_RETRANSMIT, when they give up)</SourceLine>
+   <SourceLine>Dim requestID, fromNode, toNode As UInt32</SourceLine>
+   <SourceLine>Dim errorCode As Integer</SourceLine>
+   <SourceLine>If Not MeshTakeRouting(requestID, fromNode, toNode, errorCode) Then Return</SourceLine>
+   <SourceLine>If mAckLabels = Nil Then Return</SourceLine>
+   <SourceLine>Dim k As String = requestID.ToString</SourceLine>
+   <SourceLine>If Not mAckLabels.HasKey(k) Then Return</SourceLine>
+   <SourceLine>Dim label As String = mAckLabels.Value(k).StringValue</SourceLine>
+   <SourceLine>Dim target As UInt32 = CType(mAckTargets.Value(k).Int64Value, UInt32)</SourceLine>
+   <SourceLine>If errorCode = 0 And fromNode &lt;&gt; target Then</SourceLine>
+   <SourceLine>AppLog("  " + label + ": ACK from " + MeshNodeID(fromNode) + ", not the destination; still waiting (packet " + k + ")")</SourceLine>
+   <SourceLine>Return</SourceLine>
+   <SourceLine>End If</SourceLine>
+   <SourceLine>AppForgetAck(k)</SourceLine>
+   <SourceLine>If errorCode = 0 Then</SourceLine>
+   <SourceLine>AppLog("  DELIVERED: " + label + " acknowledged by " + MeshNodeID(fromNode) + " (packet " + k + ")")</SourceLine>
+   <SourceLine>Else</SourceLine>
+   <SourceLine>AppLog("  NOT DELIVERED: " + label + ": " + MeshRoutingErrorName(errorCode) + " (reported by " + MeshNodeID(fromNode) + ", packet " + k + ")")</SourceLine>
+   <SourceLine>End If</SourceLine>
+   <SourceLine>End Sub</SourceLine>
+  </ItemSource>
+  <TextEncoding>134217984</TextEncoding>
+  <AliasName></AliasName>
+  <ItemFlags>0</ItemFlags>
+  <IsShared>0</IsShared>
+  <ItemParams></ItemParams>
+  <ItemResult></ItemResult>
+ </Method>
+ <Method>
+  <ItemName>AppAckTimerAction</ItemName>
+  <Compatibility></Compatibility>
+  <Visible>1</Visible>
+  <PartID>275062603</PartID>
+  <ItemSource>
+   <TextEncoding>134217984</TextEncoding>
+   <SourceLine>Sub AppAckTimerAction(sender As Timer)</SourceLine>
+   <SourceLine>// Messages without an answer after 2 minutes</SourceLine>
+   <SourceLine>If mAckLabels = Nil Or mAckLabels.KeyCount = 0 Then</SourceLine>
+   <SourceLine>sender.RunMode = Timer.RunModes.Off</SourceLine>
+   <SourceLine>Return</SourceLine>
+   <SourceLine>End If</SourceLine>
+   <SourceLine>Dim t As Double = System.Microseconds / 1000000</SourceLine>
+   <SourceLine>For Each k As Variant In mAckLabels.Keys</SourceLine>
+   <SourceLine>If t - mAckTimes.Value(k).DoubleValue &gt; 120 Then</SourceLine>
+   <SourceLine>AppLog("  No acknowledgement for " + mAckLabels.Value(k).StringValue + " within 2 minutes (packet " + k.StringValue + "): it may not have arrived")</SourceLine>
+   <SourceLine>AppForgetAck(k.StringValue)</SourceLine>
+   <SourceLine>End If</SourceLine>
+   <SourceLine>Next</SourceLine>
+   <SourceLine>End Sub</SourceLine>
+  </ItemSource>
+  <TextEncoding>134217984</TextEncoding>
+  <AliasName></AliasName>
+  <ItemFlags>0</ItemFlags>
+  <IsShared>0</IsShared>
+  <ItemParams>sender As Timer</ItemParams>
+  <ItemResult></ItemResult>
+ </Method>
+ <Method>
+  <ItemName>AppAnswerAckRequest</ItemName>
+  <Compatibility></Compatibility>
+  <Visible>1</Visible>
+  <PartID>371239152</PartID>
+  <ItemSource>
+   <TextEncoding>134217984</TextEncoding>
+   <SourceLine>Sub AppAnswerAckRequest()</SourceLine>
+   <SourceLine>// After MeshPacketSummary: a message to our node asked for an ACK (want_ack): answer like a node does,</SourceLine>
+   <SourceLine>// so the sender's app shows it as delivered</SourceLine>
+   <SourceLine>Dim fromNode, packetID As UInt32</SourceLine>
+   <SourceLine>Dim channelName As String</SourceLine>
+   <SourceLine>If Not MeshTakeAckRequest(fromNode, packetID, channelName) Then Return</SourceLine>
+   <SourceLine>If Not AppHasNode() Or AppNodeRoot() = "" Or MeshChannelCount() = 0 Then Return</SourceLine>
+   <SourceLine>If channelName = "" Then channelName = MeshChannelName(0)</SourceLine>
+   <SourceLine>Dim envelope As String</SourceLine>
+   <SourceLine>Dim problem As String = MeshBuildAck(channelName, AppNodeID(), AppNodeNum(), fromNode, packetID, envelope)</SourceLine>
+   <SourceLine>If problem &lt;&gt; "" Then</SourceLine>
+   <SourceLine>AppLog("  ACK to " + MeshNodeID(fromNode) + " failed: " + problem)</SourceLine>
+   <SourceLine>Return</SourceLine>
+   <SourceLine>End If</SourceLine>
+   <SourceLine>Call AppPublish(AppNodeRoot() + "/2/e/" + channelName + "/" + AppNodeID(), envelope, 0, "")</SourceLine>
+   <SourceLine>AppLog("  ACK sent to " + MeshNodeID(fromNode) + " for packet " + packetID.ToString)</SourceLine>
+   <SourceLine>End Sub</SourceLine>
+  </ItemSource>
+  <TextEncoding>134217984</TextEncoding>
+  <AliasName></AliasName>
+  <ItemFlags>0</ItemFlags>
+  <IsShared>0</IsShared>
+  <ItemParams></ItemParams>
+  <ItemResult></ItemResult>
+ </Method>
  <Property>
   <ItemName>mLogStarted</ItemName>
   <Compatibility></Compatibility>
@@ -3333,6 +3490,66 @@
   </ItemSource>
   <TextEncoding>134217984</TextEncoding>
   <ItemDeclaration>mPublishLabels As Dictionary</ItemDeclaration>
+  <ItemFlags>33</ItemFlags>
+  <IsShared>0</IsShared>
+ </Property>
+ <Property>
+  <ItemName>mAckLabels</ItemName>
+  <Compatibility></Compatibility>
+  <Visible>1</Visible>
+  <PartID>2078171121</PartID>
+  <ItemSource>
+   <TextEncoding>134217984</TextEncoding>
+   <SourceLine>mAckLabels As Dictionary</SourceLine>
+   <SourceLine></SourceLine>
+  </ItemSource>
+  <TextEncoding>134217984</TextEncoding>
+  <ItemDeclaration>mAckLabels As Dictionary</ItemDeclaration>
+  <ItemFlags>33</ItemFlags>
+  <IsShared>0</IsShared>
+ </Property>
+ <Property>
+  <ItemName>mAckTimes</ItemName>
+  <Compatibility></Compatibility>
+  <Visible>1</Visible>
+  <PartID>1529268696</PartID>
+  <ItemSource>
+   <TextEncoding>134217984</TextEncoding>
+   <SourceLine>mAckTimes As Dictionary</SourceLine>
+   <SourceLine></SourceLine>
+  </ItemSource>
+  <TextEncoding>134217984</TextEncoding>
+  <ItemDeclaration>mAckTimes As Dictionary</ItemDeclaration>
+  <ItemFlags>33</ItemFlags>
+  <IsShared>0</IsShared>
+ </Property>
+ <Property>
+  <ItemName>mAckTargets</ItemName>
+  <Compatibility></Compatibility>
+  <Visible>1</Visible>
+  <PartID>1030896871</PartID>
+  <ItemSource>
+   <TextEncoding>134217984</TextEncoding>
+   <SourceLine>mAckTargets As Dictionary</SourceLine>
+   <SourceLine></SourceLine>
+  </ItemSource>
+  <TextEncoding>134217984</TextEncoding>
+  <ItemDeclaration>mAckTargets As Dictionary</ItemDeclaration>
+  <ItemFlags>33</ItemFlags>
+  <IsShared>0</IsShared>
+ </Property>
+ <Property>
+  <ItemName>mAckTimer</ItemName>
+  <Compatibility></Compatibility>
+  <Visible>1</Visible>
+  <PartID>2055808023</PartID>
+  <ItemSource>
+   <TextEncoding>134217984</TextEncoding>
+   <SourceLine>mAckTimer As Timer</SourceLine>
+   <SourceLine></SourceLine>
+  </ItemSource>
+  <TextEncoding>134217984</TextEncoding>
+  <ItemDeclaration>mAckTimer As Timer</ItemDeclaration>
   <ItemFlags>33</ItemFlags>
   <IsShared>0</IsShared>
  </Property>
@@ -3905,6 +4122,8 @@
    <SourceLine>// for duplicate detection ("" when id is 0). Returns "" if the payload is not a ServiceEnvelope</SourceLine>
    <SourceLine>jsonText = ""</SourceLine>
    <SourceLine>packetKey = ""</SourceLine>
+   <SourceLine>mRoutingValid = False</SourceLine>
+   <SourceLine>mAckRequestValid = False</SourceLine>
    <SourceLine>If payload.Bytes = 0 Then Return ""</SourceLine>
    <SourceLine>Dim mb As MemoryBlock = payload</SourceLine>
    <SourceLine>Dim env As New ProtoReader(mb)</SourceLine>
@@ -3937,6 +4156,7 @@
    <SourceLine>Dim rxSnr As Single</SourceLine>
    <SourceLine>Dim rxRssi As Int32</SourceLine>
    <SourceLine>Dim pkiEncrypted As Boolean</SourceLine>
+   <SourceLine>Dim wantAck As Boolean</SourceLine>
    <SourceLine>Dim portnum As Integer = -1</SourceLine>
    <SourceLine>Dim dataPayload As String</SourceLine>
    <SourceLine>Dim requestID As UInt32</SourceLine>
@@ -3982,6 +4202,9 @@
    <SourceLine>Case 17 // pki_encrypted</SourceLine>
    <SourceLine>If wireType &lt;&gt; 0 Then Return ""</SourceLine>
    <SourceLine>pkiEncrypted = (packet.ReadVarint &lt;&gt; 0)</SourceLine>
+   <SourceLine>Case 10 // want_ack</SourceLine>
+   <SourceLine>If wireType &lt;&gt; 0 Then Return ""</SourceLine>
+   <SourceLine>wantAck = (packet.ReadVarint &lt;&gt; 0)</SourceLine>
    <SourceLine>Else</SourceLine>
    <SourceLine>packet.Skip(wireType)</SourceLine>
    <SourceLine>End Select</SourceLine>
@@ -4050,6 +4273,42 @@
    <SourceLine>If Not pkiDecrypted Then jsonText = MeshPacketJSON(packetID, fromNode, toNode, channel, rxTime, rxSnr, rxRssi, hopLimit, hopStart, gatewayID, portnum, dataPayload, requestID)</SourceLine>
    <SourceLine>End If</SourceLine>
    <SourceLine>If packetID &lt;&gt; 0 Then packetKey = fromNode.ToString + ":" + packetID.ToString</SourceLine>
+   <SourceLine>// Remembered for the app (MeshTakeRouting / MeshTakeAckRequest): a ROUTING answer to one of our messages,</SourceLine>
+   <SourceLine>// and a message to our node that asks for an ACK</SourceLine>
+   <SourceLine>mRoutingValid = False</SourceLine>
+   <SourceLine>mAckRequestValid = False</SourceLine>
+   <SourceLine>If portnum = 5 And requestID &lt;&gt; 0 Then</SourceLine>
+   <SourceLine>Dim routingMB As MemoryBlock = ProtoRawBytes(dataPayload)</SourceLine>
+   <SourceLine>If routingMB &lt;&gt; Nil Then</SourceLine>
+   <SourceLine>Dim routingReader As New ProtoReader(routingMB)</SourceLine>
+   <SourceLine>Dim routingField, routingWire As Integer</SourceLine>
+   <SourceLine>Dim routingCode As Integer = -1</SourceLine>
+   <SourceLine>While routingReader.ReadTag(routingField, routingWire)</SourceLine>
+   <SourceLine>If routingField = 3 And routingWire = 0 Then</SourceLine>
+   <SourceLine>routingCode = CType(routingReader.ReadVarint, Integer)</SourceLine>
+   <SourceLine>Else</SourceLine>
+   <SourceLine>routingReader.Skip(routingWire)</SourceLine>
+   <SourceLine>End If</SourceLine>
+   <SourceLine>Wend</SourceLine>
+   <SourceLine>If routingCode &gt;= 0 And Not routingReader.Failed Then</SourceLine>
+   <SourceLine>mRoutingValid = True</SourceLine>
+   <SourceLine>mRoutingRequestID = requestID</SourceLine>
+   <SourceLine>mRoutingFrom = fromNode</SourceLine>
+   <SourceLine>mRoutingTo = toNode</SourceLine>
+   <SourceLine>mRoutingError = routingCode</SourceLine>
+   <SourceLine>End If</SourceLine>
+   <SourceLine>End If</SourceLine>
+   <SourceLine>End If</SourceLine>
+   <SourceLine>If wantAck And portnum &gt;= 0 And portnum &lt;&gt; 5 And toNode &lt;&gt; 4294967295 And toNode = MeshPKINodeNum() Then</SourceLine>
+   <SourceLine>mAckRequestValid = True</SourceLine>
+   <SourceLine>mAckRequestFrom = fromNode</SourceLine>
+   <SourceLine>mAckRequestID = packetID</SourceLine>
+   <SourceLine>If decrypted Then</SourceLine>
+   <SourceLine>mAckRequestChannel = keyName</SourceLine>
+   <SourceLine>Else</SourceLine>
+   <SourceLine>mAckRequestChannel = "" // PKI or decoded: the app answers on its primary channel</SourceLine>
+   <SourceLine>End If</SourceLine>
+   <SourceLine>End If</SourceLine>
    <SourceLine>Return line</SourceLine>
    <SourceLine>End Function</SourceLine>
   </ItemSource>
@@ -4117,6 +4376,8 @@
    <SourceLine>Return MeshTracerouteSummary(payload, fromNode, toNode, requestID)</SourceLine>
    <SourceLine>Case 71</SourceLine>
    <SourceLine>Return MeshNeighborInfoSummary(payload)</SourceLine>
+   <SourceLine>Case 5</SourceLine>
+   <SourceLine>Return MeshRoutingSummary(payload, requestID)</SourceLine>
    <SourceLine>Case 3</SourceLine>
    <SourceLine>Return MeshPositionSummary(payload)</SourceLine>
    <SourceLine>Case 4</SourceLine>
@@ -5087,6 +5348,7 @@
    <SourceLine>If r.Failed Then Return "(bad traceroute)"</SourceLine>
    <SourceLine></SourceLine>
    <SourceLine>If requestID = 0 Then</SourceLine>
+   <SourceLine>If route.Count = 1 Then Return "request, 1 hop so far"</SourceLine>
    <SourceLine>Return "request, " + route.Count.ToString + " hops so far"</SourceLine>
    <SourceLine>End If</SourceLine>
    <SourceLine>Dim result As String = "towards: " + MeshRouteString(toNode, route, fromNode, snrTowards)</SourceLine>
@@ -5255,6 +5517,155 @@
   <ItemParams>packetKey As String</ItemParams>
   <ItemResult>Boolean</ItemResult>
  </Method>
+ <Method>
+  <ItemName>MeshRoutingErrorName</ItemName>
+  <Compatibility></Compatibility>
+  <Visible>1</Visible>
+  <PartID>1525155875</PartID>
+  <ItemSource>
+   <TextEncoding>134217984</TextEncoding>
+   <SourceLine>Function MeshRoutingErrorName(code As Integer) As String</SourceLine>
+   <SourceLine>// Routing.Error in mesh.proto (firmware 2.8)</SourceLine>
+   <SourceLine>Select Case code</SourceLine>
+   <SourceLine>Case 0</SourceLine>
+   <SourceLine>Return "NONE"</SourceLine>
+   <SourceLine>Case 1</SourceLine>
+   <SourceLine>Return "NO_ROUTE"</SourceLine>
+   <SourceLine>Case 2</SourceLine>
+   <SourceLine>Return "GOT_NAK"</SourceLine>
+   <SourceLine>Case 3</SourceLine>
+   <SourceLine>Return "TIMEOUT"</SourceLine>
+   <SourceLine>Case 4</SourceLine>
+   <SourceLine>Return "NO_INTERFACE"</SourceLine>
+   <SourceLine>Case 5</SourceLine>
+   <SourceLine>Return "MAX_RETRANSMIT"</SourceLine>
+   <SourceLine>Case 6</SourceLine>
+   <SourceLine>Return "NO_CHANNEL"</SourceLine>
+   <SourceLine>Case 7</SourceLine>
+   <SourceLine>Return "TOO_LARGE"</SourceLine>
+   <SourceLine>Case 8</SourceLine>
+   <SourceLine>Return "NO_RESPONSE"</SourceLine>
+   <SourceLine>Case 9</SourceLine>
+   <SourceLine>Return "DUTY_CYCLE_LIMIT"</SourceLine>
+   <SourceLine>Case 32</SourceLine>
+   <SourceLine>Return "BAD_REQUEST"</SourceLine>
+   <SourceLine>Case 33</SourceLine>
+   <SourceLine>Return "NOT_AUTHORIZED"</SourceLine>
+   <SourceLine>Case 34</SourceLine>
+   <SourceLine>Return "PKI_FAILED"</SourceLine>
+   <SourceLine>Case 35</SourceLine>
+   <SourceLine>Return "PKI_UNKNOWN_PUBKEY"</SourceLine>
+   <SourceLine>Case 36</SourceLine>
+   <SourceLine>Return "ADMIN_BAD_SESSION_KEY"</SourceLine>
+   <SourceLine>Case 37</SourceLine>
+   <SourceLine>Return "ADMIN_PUBLIC_KEY_UNAUTHORIZED"</SourceLine>
+   <SourceLine>Case 38</SourceLine>
+   <SourceLine>Return "RATE_LIMIT_EXCEEDED"</SourceLine>
+   <SourceLine>Case 39</SourceLine>
+   <SourceLine>Return "PKI_SEND_FAIL_PUBLIC_KEY"</SourceLine>
+   <SourceLine>Else</SourceLine>
+   <SourceLine>Return "error " + Str(code)</SourceLine>
+   <SourceLine>End Select</SourceLine>
+   <SourceLine>End Function</SourceLine>
+  </ItemSource>
+  <TextEncoding>134217984</TextEncoding>
+  <AliasName></AliasName>
+  <ItemFlags>0</ItemFlags>
+  <IsShared>0</IsShared>
+  <ItemParams>code As Integer</ItemParams>
+  <ItemResult>String</ItemResult>
+ </Method>
+ <Method>
+  <ItemName>MeshRoutingSummary</ItemName>
+  <Compatibility></Compatibility>
+  <Visible>1</Visible>
+  <PartID>986789039</PartID>
+  <ItemSource>
+   <TextEncoding>134217984</TextEncoding>
+   <SourceLine>Function MeshRoutingSummary(payload As String, requestID As UInt32) As String</SourceLine>
+   <SourceLine>// ROUTING_APP: an ACK / NAK (error_reason, field 3) for packet requestID, or route discovery (fields 1, 2)</SourceLine>
+   <SourceLine>Dim mb As MemoryBlock = ProtoRawBytes(payload)</SourceLine>
+   <SourceLine>If mb = Nil Then Return ""</SourceLine>
+   <SourceLine>Dim r As New ProtoReader(mb)</SourceLine>
+   <SourceLine>Dim field, wireType As Integer</SourceLine>
+   <SourceLine>Dim code As Integer = -1</SourceLine>
+   <SourceLine>Dim what As String</SourceLine>
+   <SourceLine>While r.ReadTag(field, wireType)</SourceLine>
+   <SourceLine>If field = 3 And wireType = 0 Then</SourceLine>
+   <SourceLine>code = CType(r.ReadVarint, Integer)</SourceLine>
+   <SourceLine>ElseIf field = 1 Then</SourceLine>
+   <SourceLine>what = "route request"</SourceLine>
+   <SourceLine>r.Skip(wireType)</SourceLine>
+   <SourceLine>ElseIf field = 2 Then</SourceLine>
+   <SourceLine>what = "route reply"</SourceLine>
+   <SourceLine>r.Skip(wireType)</SourceLine>
+   <SourceLine>Else</SourceLine>
+   <SourceLine>r.Skip(wireType)</SourceLine>
+   <SourceLine>End If</SourceLine>
+   <SourceLine>Wend</SourceLine>
+   <SourceLine>If r.Failed Then Return "(bad routing)"</SourceLine>
+   <SourceLine>If code = 0 Then Return "ACK for packet " + requestID.ToString</SourceLine>
+   <SourceLine>If code &gt; 0 Then Return "NAK for packet " + requestID.ToString + ": " + MeshRoutingErrorName(code)</SourceLine>
+   <SourceLine>Return what</SourceLine>
+   <SourceLine>End Function</SourceLine>
+  </ItemSource>
+  <TextEncoding>134217984</TextEncoding>
+  <AliasName></AliasName>
+  <ItemFlags>0</ItemFlags>
+  <IsShared>0</IsShared>
+  <ItemParams>payload As String, requestID As UInt32</ItemParams>
+  <ItemResult>String</ItemResult>
+ </Method>
+ <Method>
+  <ItemName>MeshTakeRouting</ItemName>
+  <Compatibility></Compatibility>
+  <Visible>1</Visible>
+  <PartID>1961280394</PartID>
+  <ItemSource>
+   <TextEncoding>134217984</TextEncoding>
+   <SourceLine>Function MeshTakeRouting(ByRef requestID As UInt32, ByRef fromNode As UInt32, ByRef toNode As UInt32, ByRef errorCode As Integer) As Boolean</SourceLine>
+   <SourceLine>// After MeshPacketSummary: True (once) when the packet was a ROUTING ACK / NAK for packet requestID</SourceLine>
+   <SourceLine>If Not mRoutingValid Then Return False</SourceLine>
+   <SourceLine>mRoutingValid = False</SourceLine>
+   <SourceLine>requestID = mRoutingRequestID</SourceLine>
+   <SourceLine>fromNode = mRoutingFrom</SourceLine>
+   <SourceLine>toNode = mRoutingTo</SourceLine>
+   <SourceLine>errorCode = mRoutingError</SourceLine>
+   <SourceLine>Return True</SourceLine>
+   <SourceLine>End Function</SourceLine>
+  </ItemSource>
+  <TextEncoding>134217984</TextEncoding>
+  <AliasName></AliasName>
+  <ItemFlags>0</ItemFlags>
+  <IsShared>0</IsShared>
+  <ItemParams>ByRef requestID As UInt32, ByRef fromNode As UInt32, ByRef toNode As UInt32, ByRef errorCode As Integer</ItemParams>
+  <ItemResult>Boolean</ItemResult>
+ </Method>
+ <Method>
+  <ItemName>MeshTakeAckRequest</ItemName>
+  <Compatibility></Compatibility>
+  <Visible>1</Visible>
+  <PartID>592009973</PartID>
+  <ItemSource>
+   <TextEncoding>134217984</TextEncoding>
+   <SourceLine>Function MeshTakeAckRequest(ByRef fromNode As UInt32, ByRef packetID As UInt32, ByRef channelName As String) As Boolean</SourceLine>
+   <SourceLine>// After MeshPacketSummary: True (once) when the packet was addressed to our node with want_ack set,</SourceLine>
+   <SourceLine>// so the app should answer with MeshBuildAck (channelName "" = its primary channel)</SourceLine>
+   <SourceLine>If Not mAckRequestValid Then Return False</SourceLine>
+   <SourceLine>mAckRequestValid = False</SourceLine>
+   <SourceLine>fromNode = mAckRequestFrom</SourceLine>
+   <SourceLine>packetID = mAckRequestID</SourceLine>
+   <SourceLine>channelName = mAckRequestChannel</SourceLine>
+   <SourceLine>Return True</SourceLine>
+   <SourceLine>End Function</SourceLine>
+  </ItemSource>
+  <TextEncoding>134217984</TextEncoding>
+  <AliasName></AliasName>
+  <ItemFlags>0</ItemFlags>
+  <IsShared>0</IsShared>
+  <ItemParams>ByRef fromNode As UInt32, ByRef packetID As UInt32, ByRef channelName As String</ItemParams>
+  <ItemResult>Boolean</ItemResult>
+ </Method>
  <Property>
   <ItemName>mSeenPackets</ItemName>
   <Compatibility></Compatibility>
@@ -5267,6 +5678,141 @@
   </ItemSource>
   <TextEncoding>134217984</TextEncoding>
   <ItemDeclaration>mSeenPackets As Dictionary</ItemDeclaration>
+  <ItemFlags>33</ItemFlags>
+  <IsShared>0</IsShared>
+ </Property>
+ <Property>
+  <ItemName>mRoutingValid</ItemName>
+  <Compatibility></Compatibility>
+  <Visible>1</Visible>
+  <PartID>1484119019</PartID>
+  <ItemSource>
+   <TextEncoding>134217984</TextEncoding>
+   <SourceLine>mRoutingValid As Boolean</SourceLine>
+   <SourceLine></SourceLine>
+  </ItemSource>
+  <TextEncoding>134217984</TextEncoding>
+  <ItemDeclaration>mRoutingValid As Boolean</ItemDeclaration>
+  <ItemFlags>33</ItemFlags>
+  <IsShared>0</IsShared>
+ </Property>
+ <Property>
+  <ItemName>mRoutingRequestID</ItemName>
+  <Compatibility></Compatibility>
+  <Visible>1</Visible>
+  <PartID>591444652</PartID>
+  <ItemSource>
+   <TextEncoding>134217984</TextEncoding>
+   <SourceLine>mRoutingRequestID As UInt32</SourceLine>
+   <SourceLine></SourceLine>
+  </ItemSource>
+  <TextEncoding>134217984</TextEncoding>
+  <ItemDeclaration>mRoutingRequestID As UInt32</ItemDeclaration>
+  <ItemFlags>33</ItemFlags>
+  <IsShared>0</IsShared>
+ </Property>
+ <Property>
+  <ItemName>mRoutingFrom</ItemName>
+  <Compatibility></Compatibility>
+  <Visible>1</Visible>
+  <PartID>294056552</PartID>
+  <ItemSource>
+   <TextEncoding>134217984</TextEncoding>
+   <SourceLine>mRoutingFrom As UInt32</SourceLine>
+   <SourceLine></SourceLine>
+  </ItemSource>
+  <TextEncoding>134217984</TextEncoding>
+  <ItemDeclaration>mRoutingFrom As UInt32</ItemDeclaration>
+  <ItemFlags>33</ItemFlags>
+  <IsShared>0</IsShared>
+ </Property>
+ <Property>
+  <ItemName>mRoutingTo</ItemName>
+  <Compatibility></Compatibility>
+  <Visible>1</Visible>
+  <PartID>1410307239</PartID>
+  <ItemSource>
+   <TextEncoding>134217984</TextEncoding>
+   <SourceLine>mRoutingTo As UInt32</SourceLine>
+   <SourceLine></SourceLine>
+  </ItemSource>
+  <TextEncoding>134217984</TextEncoding>
+  <ItemDeclaration>mRoutingTo As UInt32</ItemDeclaration>
+  <ItemFlags>33</ItemFlags>
+  <IsShared>0</IsShared>
+ </Property>
+ <Property>
+  <ItemName>mRoutingError</ItemName>
+  <Compatibility></Compatibility>
+  <Visible>1</Visible>
+  <PartID>1746914793</PartID>
+  <ItemSource>
+   <TextEncoding>134217984</TextEncoding>
+   <SourceLine>mRoutingError As Integer</SourceLine>
+   <SourceLine></SourceLine>
+  </ItemSource>
+  <TextEncoding>134217984</TextEncoding>
+  <ItemDeclaration>mRoutingError As Integer</ItemDeclaration>
+  <ItemFlags>33</ItemFlags>
+  <IsShared>0</IsShared>
+ </Property>
+ <Property>
+  <ItemName>mAckRequestValid</ItemName>
+  <Compatibility></Compatibility>
+  <Visible>1</Visible>
+  <PartID>475559107</PartID>
+  <ItemSource>
+   <TextEncoding>134217984</TextEncoding>
+   <SourceLine>mAckRequestValid As Boolean</SourceLine>
+   <SourceLine></SourceLine>
+  </ItemSource>
+  <TextEncoding>134217984</TextEncoding>
+  <ItemDeclaration>mAckRequestValid As Boolean</ItemDeclaration>
+  <ItemFlags>33</ItemFlags>
+  <IsShared>0</IsShared>
+ </Property>
+ <Property>
+  <ItemName>mAckRequestFrom</ItemName>
+  <Compatibility></Compatibility>
+  <Visible>1</Visible>
+  <PartID>262296418</PartID>
+  <ItemSource>
+   <TextEncoding>134217984</TextEncoding>
+   <SourceLine>mAckRequestFrom As UInt32</SourceLine>
+   <SourceLine></SourceLine>
+  </ItemSource>
+  <TextEncoding>134217984</TextEncoding>
+  <ItemDeclaration>mAckRequestFrom As UInt32</ItemDeclaration>
+  <ItemFlags>33</ItemFlags>
+  <IsShared>0</IsShared>
+ </Property>
+ <Property>
+  <ItemName>mAckRequestID</ItemName>
+  <Compatibility></Compatibility>
+  <Visible>1</Visible>
+  <PartID>2038221572</PartID>
+  <ItemSource>
+   <TextEncoding>134217984</TextEncoding>
+   <SourceLine>mAckRequestID As UInt32</SourceLine>
+   <SourceLine></SourceLine>
+  </ItemSource>
+  <TextEncoding>134217984</TextEncoding>
+  <ItemDeclaration>mAckRequestID As UInt32</ItemDeclaration>
+  <ItemFlags>33</ItemFlags>
+  <IsShared>0</IsShared>
+ </Property>
+ <Property>
+  <ItemName>mAckRequestChannel</ItemName>
+  <Compatibility></Compatibility>
+  <Visible>1</Visible>
+  <PartID>2023209729</PartID>
+  <ItemSource>
+   <TextEncoding>134217984</TextEncoding>
+   <SourceLine>mAckRequestChannel As String</SourceLine>
+   <SourceLine></SourceLine>
+  </ItemSource>
+  <TextEncoding>134217984</TextEncoding>
+  <ItemDeclaration>mAckRequestChannel As String</ItemDeclaration>
   <ItemFlags>33</ItemFlags>
   <IsShared>0</IsShared>
  </Property>
@@ -7872,7 +8418,7 @@
   <PartID>1917258109</PartID>
   <ItemSource>
    <TextEncoding>134217984</TextEncoding>
-   <SourceLine>Function MeshBuildEnvelope(channelName As String, gatewayID As String, fromNode As UInt32, toNode As UInt32, packetID As UInt32, hopLimit As Integer, portnum As Integer, payload As String, ByRef envelope As String) As String</SourceLine>
+   <SourceLine>Function MeshBuildEnvelope(channelName As String, gatewayID As String, fromNode As UInt32, toNode As UInt32, packetID As UInt32, hopLimit As Integer, portnum As Integer, payload As String, ByRef envelope As String, wantAck As Boolean = False, requestID As UInt32 = 0) As String</SourceLine>
    <SourceLine>// A ServiceEnvelope for downlink, as a gateway accepts it (firmware MQTT::onReceiveProto): encrypted with</SourceLine>
    <SourceLine>// the channel key when the channel has one (a gateway with MQTT encryption on ignores decoded packets),</SourceLine>
    <SourceLine>// with the channel hash in MeshPacket.channel so the gateway finds the key, and the same nonce as decryption.</SourceLine>
@@ -7881,6 +8427,7 @@
    <SourceLine>If idx &lt; 0 Then Return "channel """ + channelName + """ is not in the configuration"</SourceLine>
    <SourceLine>Dim key As String = MeshChannelKey(idx)</SourceLine>
    <SourceLine>Dim data As String = ProtoFieldVarint(1, portnum) + ProtoFieldBytes(2, payload)</SourceLine>
+   <SourceLine>If requestID &lt;&gt; 0 Then data = data + ProtoFieldFixed32(6, requestID) // Data.request_id, e.g. in an ACK</SourceLine>
    <SourceLine>Dim packet As String = ProtoFieldFixed32(1, fromNode) + ProtoFieldFixed32(2, toNode)</SourceLine>
    <SourceLine>If key.Bytes &gt; 0 Then</SourceLine>
    <SourceLine>Dim cipher As String = MeshDecrypt(key, packetID, fromNode, data) // AES-CTR: encrypting is the same operation</SourceLine>
@@ -7889,7 +8436,9 @@
    <SourceLine>Else</SourceLine>
    <SourceLine>packet = packet + ProtoFieldBytes(4, data)</SourceLine>
    <SourceLine>End If</SourceLine>
-   <SourceLine>packet = packet + ProtoFieldFixed32(6, packetID) + ProtoFieldVarint(9, hopLimit) + ProtoFieldVarint(15, hopLimit)</SourceLine>
+   <SourceLine>packet = packet + ProtoFieldFixed32(6, packetID) + ProtoFieldVarint(9, hopLimit)</SourceLine>
+   <SourceLine>If wantAck Then packet = packet + ProtoFieldVarint(10, 1) // want_ack: the destination answers with a ROUTING ACK</SourceLine>
+   <SourceLine>packet = packet + ProtoFieldVarint(15, hopLimit)</SourceLine>
    <SourceLine>envelope = ProtoFieldBytes(1, packet) + ProtoFieldBytes(2, channelName) + ProtoFieldBytes(3, gatewayID)</SourceLine>
    <SourceLine>Return ""</SourceLine>
    <SourceLine>End Function</SourceLine>
@@ -7898,7 +8447,7 @@
   <AliasName></AliasName>
   <ItemFlags>0</ItemFlags>
   <IsShared>0</IsShared>
-  <ItemParams>channelName As String, gatewayID As String, fromNode As UInt32, toNode As UInt32, packetID As UInt32, hopLimit As Integer, portnum As Integer, payload As String, ByRef envelope As String</ItemParams>
+  <ItemParams>channelName As String, gatewayID As String, fromNode As UInt32, toNode As UInt32, packetID As UInt32, hopLimit As Integer, portnum As Integer, payload As String, ByRef envelope As String, wantAck As Boolean = False, requestID As UInt32 = 0</ItemParams>
   <ItemResult>String</ItemResult>
  </Method>
  <Method>
@@ -7908,7 +8457,7 @@
   <PartID>114336532</PartID>
   <ItemSource>
    <TextEncoding>134217984</TextEncoding>
-   <SourceLine>Function MeshBuildPKIEnvelope(gatewayID As String, fromNode As UInt32, toNode As UInt32, packetID As UInt32, hopLimit As Integer, portnum As Integer, payload As String, ByRef envelope As String) As String</SourceLine>
+   <SourceLine>Function MeshBuildPKIEnvelope(gatewayID As String, fromNode As UInt32, toNode As UInt32, packetID As UInt32, hopLimit As Integer, portnum As Integer, payload As String, ByRef envelope As String, wantAck As Boolean = False) As String</SourceLine>
    <SourceLine>// A PKI direct message for downlink: Data encrypted with AES-256-CCM under SHA-256(X25519(our private key,</SourceLine>
    <SourceLine>// their public key)), ciphertext | tag | extraNonce in MeshPacket.encrypted, channel 0, pki_encrypted, and the</SourceLine>
    <SourceLine>// envelope's channel_id "PKI" (topic &lt;root&gt;/2/e/PKI/&lt;gateway&gt;). Returns "" when OK, otherwise the problem</SourceLine>
@@ -7919,7 +8468,9 @@
    <SourceLine>Dim sealed As String = MeshPKISeal(theirKey, packetID, fromNode, data)</SourceLine>
    <SourceLine>If sealed = "" Then Return "PKI encryption failed"</SourceLine>
    <SourceLine>Dim packet As String = ProtoFieldFixed32(1, fromNode) + ProtoFieldFixed32(2, toNode) + ProtoFieldBytes(5, sealed)</SourceLine>
-   <SourceLine>packet = packet + ProtoFieldFixed32(6, packetID) + ProtoFieldVarint(9, hopLimit) + ProtoFieldVarint(15, hopLimit) + ProtoFieldVarint(17, 1)</SourceLine>
+   <SourceLine>packet = packet + ProtoFieldFixed32(6, packetID) + ProtoFieldVarint(9, hopLimit)</SourceLine>
+   <SourceLine>If wantAck Then packet = packet + ProtoFieldVarint(10, 1)</SourceLine>
+   <SourceLine>packet = packet + ProtoFieldVarint(15, hopLimit) + ProtoFieldVarint(17, 1)</SourceLine>
    <SourceLine>envelope = ProtoFieldBytes(1, packet) + ProtoFieldBytes(2, "PKI") + ProtoFieldBytes(3, gatewayID)</SourceLine>
    <SourceLine>Return ""</SourceLine>
    <SourceLine>End Function</SourceLine>
@@ -7928,7 +8479,7 @@
   <AliasName></AliasName>
   <ItemFlags>0</ItemFlags>
   <IsShared>0</IsShared>
-  <ItemParams>gatewayID As String, fromNode As UInt32, toNode As UInt32, packetID As UInt32, hopLimit As Integer, portnum As Integer, payload As String, ByRef envelope As String</ItemParams>
+  <ItemParams>gatewayID As String, fromNode As UInt32, toNode As UInt32, packetID As UInt32, hopLimit As Integer, portnum As Integer, payload As String, ByRef envelope As String, wantAck As Boolean = False</ItemParams>
   <ItemResult>String</ItemResult>
  </Method>
  <Method>
@@ -7959,13 +8510,16 @@
   <PartID>348775940</PartID>
   <ItemSource>
    <TextEncoding>134217984</TextEncoding>
-   <SourceLine>Function MeshDownlink(topic As String, jsonText As String, defaultFrom As UInt32, gatewayID As String, ByRef outTopic As String, ByRef outPayload As String, ByRef info As String) As Boolean</SourceLine>
+   <SourceLine>Function MeshDownlink(topic As String, jsonText As String, defaultFrom As UInt32, gatewayID As String, ByRef outTopic As String, ByRef outPayload As String, ByRef info As String, ByRef sentID As UInt32, ByRef sentTo As UInt32, ByRef ackRequested As Boolean) As Boolean</SourceLine>
    <SourceLine>// mqtt-converter's JSON downlink: {"type": "sendtext" | "sendposition", "payload": ..., optional "from", "to",</SourceLine>
    <SourceLine>// "id", "hopLimit" / "hop_limit", "channel_id", "gateway_id"} received on &lt;root&gt;/2/json/&lt;channel&gt;/...</SourceLine>
    <SourceLine>// becomes a protobuf ServiceEnvelope for &lt;root&gt;/2/e/&lt;channel&gt;/&lt;gateway id&gt;.</SourceLine>
    <SourceLine>// True: outTopic / outPayload are ready, info describes them. False: info is the error, or "" when</SourceLine>
    <SourceLine>// the message is not a "send..." request (e.g. our own uplink JSON), which is ignored</SourceLine>
    <SourceLine>info = ""</SourceLine>
+   <SourceLine>sentID = 0</SourceLine>
+   <SourceLine>sentTo = 0</SourceLine>
+   <SourceLine>ackRequested = False</SourceLine>
    <SourceLine>Dim pos As Integer = topic.IndexOf("/2/json/")</SourceLine>
    <SourceLine>If pos &lt; 0 Then Return False</SourceLine>
    <SourceLine>Dim json As JSONItem</SourceLine>
@@ -8028,6 +8582,15 @@
    <SourceLine>If json.HasKey("pki") Then usePKI = json.Value("pki").BooleanValue</SourceLine>
    <SourceLine>Catch err As RuntimeException</SourceLine>
    <SourceLine>info = "invalid ""pki"" (true or false)"</SourceLine>
+   <SourceLine>Return False</SourceLine>
+   <SourceLine>End Try</SourceLine>
+   <SourceLine>// want_ack: direct messages ask the destination for a ROUTING ACK ("want_ack": false to skip).</SourceLine>
+   <SourceLine>// Broadcasts never do: nodes don't answer them with an ACK packet</SourceLine>
+   <SourceLine>Dim wantAck As Boolean = (toNode &lt;&gt; 4294967295)</SourceLine>
+   <SourceLine>Try</SourceLine>
+   <SourceLine>If json.HasKey("want_ack") Then wantAck = json.Value("want_ack").BooleanValue And (toNode &lt;&gt; 4294967295)</SourceLine>
+   <SourceLine>Catch err As RuntimeException</SourceLine>
+   <SourceLine>info = "invalid ""want_ack"" (true or false)"</SourceLine>
    <SourceLine>Return False</SourceLine>
    <SourceLine>End Try</SourceLine>
    <SourceLine>If usePKI And Not canPKI Then</SourceLine>
@@ -8097,10 +8660,10 @@
    <SourceLine>Dim envelope As String</SourceLine>
    <SourceLine>Dim problem As String</SourceLine>
    <SourceLine>If usePKI Then</SourceLine>
-   <SourceLine>problem = MeshBuildPKIEnvelope(gateway, fromNode, toNode, packetID, hopLimit, portnum, dataPayload, envelope)</SourceLine>
+   <SourceLine>problem = MeshBuildPKIEnvelope(gateway, fromNode, toNode, packetID, hopLimit, portnum, dataPayload, envelope, wantAck)</SourceLine>
    <SourceLine>channelName = "PKI"</SourceLine>
    <SourceLine>Else</SourceLine>
-   <SourceLine>problem = MeshBuildEnvelope(channelName, gateway, fromNode, toNode, packetID, hopLimit, portnum, dataPayload, envelope)</SourceLine>
+   <SourceLine>problem = MeshBuildEnvelope(channelName, gateway, fromNode, toNode, packetID, hopLimit, portnum, dataPayload, envelope, wantAck)</SourceLine>
    <SourceLine>End If</SourceLine>
    <SourceLine>If problem &lt;&gt; "" Then</SourceLine>
    <SourceLine>info = problem</SourceLine>
@@ -8108,7 +8671,11 @@
    <SourceLine>End If</SourceLine>
    <SourceLine>outTopic = root + "/2/e/" + channelName + "/" + gateway</SourceLine>
    <SourceLine>outPayload = envelope</SourceLine>
+   <SourceLine>sentID = packetID</SourceLine>
+   <SourceLine>sentTo = toNode</SourceLine>
+   <SourceLine>ackRequested = wantAck</SourceLine>
    <SourceLine>info = MeshNodeID(fromNode) + " -&gt; " + MeshNodeID(toNode) + "  " + what + "  (id " + packetID.ToString</SourceLine>
+   <SourceLine>If wantAck Then info = info + ", ACK requested"</SourceLine>
    <SourceLine>If usePKI Then</SourceLine>
    <SourceLine>info = info + ", PKI)"</SourceLine>
    <SourceLine>Else</SourceLine>
@@ -8122,8 +8689,29 @@
   <AliasName></AliasName>
   <ItemFlags>0</ItemFlags>
   <IsShared>0</IsShared>
-  <ItemParams>topic As String, jsonText As String, defaultFrom As UInt32, gatewayID As String, ByRef outTopic As String, ByRef outPayload As String, ByRef info As String</ItemParams>
+  <ItemParams>topic As String, jsonText As String, defaultFrom As UInt32, gatewayID As String, ByRef outTopic As String, ByRef outPayload As String, ByRef info As String, ByRef sentID As UInt32, ByRef sentTo As UInt32, ByRef ackRequested As Boolean</ItemParams>
   <ItemResult>Boolean</ItemResult>
+ </Method>
+ <Method>
+  <ItemName>MeshBuildAck</ItemName>
+  <Compatibility></Compatibility>
+  <Visible>1</Visible>
+  <PartID>2002762091</PartID>
+  <ItemSource>
+   <TextEncoding>134217984</TextEncoding>
+   <SourceLine>Function MeshBuildAck(channelName As String, gatewayID As String, fromNode As UInt32, toNode As UInt32, requestID As UInt32, ByRef envelope As String) As String</SourceLine>
+   <SourceLine>// A ROUTING ACK (error_reason NONE) for packet requestID, as a node sends it (MeshModule::allocAckNak):</SourceLine>
+   <SourceLine>// to the original sender, request_id = its packet id, channel-encrypted (ROUTING is never PKI). "" when OK</SourceLine>
+   <SourceLine>Dim routing As String = ProtoFieldVarint(3, 0) // Routing.error_reason = NONE (oneof, so encoded even when 0)</SourceLine>
+   <SourceLine>Return MeshBuildEnvelope(channelName, gatewayID, fromNode, toNode, MeshNewPacketID(), 3, 5, routing, envelope, False, requestID)</SourceLine>
+   <SourceLine>End Function</SourceLine>
+  </ItemSource>
+  <TextEncoding>134217984</TextEncoding>
+  <AliasName></AliasName>
+  <ItemFlags>0</ItemFlags>
+  <IsShared>0</IsShared>
+  <ItemParams>channelName As String, gatewayID As String, fromNode As UInt32, toNode As UInt32, requestID As UInt32, ByRef envelope As String</ItemParams>
+  <ItemResult>String</ItemResult>
  </Method>
  <ViewBehavior>
   <ViewProperty>
@@ -9909,9 +10497,12 @@
    <SourceLine>Dim channelName As String = mChannelMenu.RowTextAt(mChannelMenu.SelectedRowIndex)</SourceLine>
    <SourceLine>Dim requestTopic As String = AppNodeRoot() + "/2/json/" + channelName + "/ui"</SourceLine>
    <SourceLine>Dim outTopic, outPayload, info As String</SourceLine>
-   <SourceLine>If MeshDownlink(requestTopic, request.ToString, AppNodeNum(), AppNodeID(), outTopic, outPayload, info) Then</SourceLine>
+   <SourceLine>Dim sentID, sentTo As UInt32</SourceLine>
+   <SourceLine>Dim ackRequested As Boolean</SourceLine>
+   <SourceLine>If MeshDownlink(requestTopic, request.ToString, AppNodeNum(), AppNodeID(), outTopic, outPayload, info, sentID, sentTo, ackRequested) Then</SourceLine>
    <SourceLine>Call AppPublish(outTopic, outPayload, AppSendQoS(), "SEND")</SourceLine>
    <SourceLine>SendBoxReport("  SEND -&gt; " + outTopic + " (QoS " + Str(AppSendQoS()) + "): " + info)</SourceLine>
+   <SourceLine>If ackRequested Then AppExpectAck(sentID, sentTo, "DM to " + MeshNodeID(sentTo))</SourceLine>
    <SourceLine>mMessageField.Text = ""</SourceLine>
    <SourceLine>Else</SourceLine>
    <SourceLine>If info = "" Then info = "not sent"</SourceLine>
