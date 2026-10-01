@@ -1,0 +1,1 @@
+{"channel":0,"from":2712847316,"hop_start":3,"hops_away":1,"id":858993459,"payload":{"air_util_tx":1.25,"battery_level":87,"channel_utilization":12.5,"uptime_seconds":3600,"voltage":4.050000190734863},"rssi":-95,"sender":"!deadbeef","snr":-7.25,"timestamp":1790000000,"to":4294967295,"type":"telemetry"}

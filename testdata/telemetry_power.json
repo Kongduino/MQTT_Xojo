@@ -1,0 +1,1 @@
+{"channel":0,"from":2712847316,"hop_start":3,"hops_away":1,"id":2863311530,"payload":{"current_ch1":0.3499999940395355,"voltage_ch1":12.600000381469727,"voltage_ch2":5.019999980926514},"rssi":-95,"sender":"!deadbeef","snr":-7.25,"timestamp":1790000000,"to":4294967295,"type":"telemetry"}

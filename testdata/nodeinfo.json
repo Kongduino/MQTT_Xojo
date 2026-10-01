@@ -1,0 +1,1 @@
+{"channel":0,"from":2712847316,"hop_start":3,"hops_away":1,"id":1431655765,"payload":{"hardware":7,"id":"!a1b2c3d4","longname":"Test T-Echo","role":0,"shortname":"DDA"},"rssi":-95,"sender":"!deadbeef","snr":-7.25,"timestamp":1790000000,"to":4294967295,"type":"nodeinfo"}

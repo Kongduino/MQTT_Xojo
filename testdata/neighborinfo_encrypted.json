@@ -1,0 +1,1 @@
+{"channel":0,"from":195939070,"hop_start":3,"hops_away":1,"id":3722304989,"payload":{"last_sent_by_id":195939070,"neighbors":[{"node_id":2712847316,"snr":6},{"node_id":305419896,"snr":-3}],"neighbors_count":2,"node_broadcast_interval_secs":900,"node_id":195939070},"rssi":-95,"sender":"!deadbeef","snr":-7.25,"timestamp":1790000000,"to":4294967295,"type":"neighborinfo"}

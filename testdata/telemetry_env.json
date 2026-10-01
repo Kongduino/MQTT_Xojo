@@ -1,0 +1,1 @@
+{"channel":0,"from":195939070,"hop_start":3,"hops_away":1,"id":2290649224,"payload":{"barometric_pressure":1012.2999877929688,"lux":350.0,"relative_humidity":61.20000076293945,"temperature":23.5,"wind_direction":270},"rssi":-95,"sender":"!deadbeef","snr":-7.25,"timestamp":1790000000,"to":4294967295,"type":"telemetry"}

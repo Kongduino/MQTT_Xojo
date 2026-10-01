@@ -1,0 +1,34 @@
+{
+  "broker": {
+    "host": "mqtt.example.com",
+    "port": 1883,
+    "username": "your-username",
+    "password": "your-password",
+    "client_id": "MQTT_Xojo"
+  },
+  "topics": [
+    "msh/EU_868/2/e/#"
+  ],
+  "channels": [
+    {
+      "name": "LongFast",
+      "psk": "AQ=="
+    },
+    {
+      "name": "YourChannel",
+      "psk": "base64 PSK as shown in the Meshtastic app"
+    }
+  ],
+  "options": {
+    "dedupe": false,
+    "hexdump": false
+  },
+  "node": {
+    "id": "!00c0ffee",
+    "long_name": "Xojo MQTT",
+    "short_name": "XOJO",
+    "root": "msh/EU_868",
+    "private_key": ""
+  },
+  "public_keys": {}
+}

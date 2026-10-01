@@ -1,0 +1,1 @@
+{"channel":0,"from":195939070,"hop_start":3,"hops_away":1,"id":4008636142,"payload":{"route":["!12345678","!a1b2c3d4","!0badcafe"],"route_back":["!0badcafe","!a1b2c3d4","!12345678"],"snr_back":[5.5,7.5],"snr_towards":[6.25,4.5]},"rssi":-95,"sender":"!deadbeef","snr":-7.25,"timestamp":1790000000,"to":305419896,"type":"traceroute"}

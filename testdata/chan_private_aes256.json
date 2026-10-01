@@ -1,0 +1,1 @@
+{"channel":77,"from":195939070,"hop_start":3,"hops_away":1,"id":117901058,"payload":{"altitude":120,"latitude_i":223300000,"longitude_i":1141800000,"time":1790000000},"rssi":-95,"sender":"!deadbeef","snr":-7.25,"timestamp":1790000000,"to":4294967295,"type":"position"}

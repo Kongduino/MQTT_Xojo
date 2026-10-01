@@ -1,0 +1,1 @@
+{"channel":0,"from":2712847316,"hop_start":3,"hops_away":1,"id":3435973836,"payload":{"description":"Meet here at 9","expire":1790086400,"id":4242,"latitude_i":223000000,"locked_to":2712847316,"longitude_i":1141700000,"name":"Base camp"},"rssi":-95,"sender":"!deadbeef","snr":-7.25,"timestamp":1790000000,"to":4294967295,"type":"waypoint"}
