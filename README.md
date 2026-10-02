@@ -175,11 +175,11 @@ These rules come from the firmware's `MQTT.cpp` and `Router.cpp`. Each one silen
 
 ## Using the library in your own project
 
-Copy the files in `Library/` into your project (drag them into the Xojo navigator):
+Copy the files in `Library/` into your project (drag them into the Xojo navigator). For a complete application built on the library, see [Sensor_Dashboard](https://github.com/Kongduino/Sensor_Dashboard): it follows sensors over MQTT and over a node's TCP or USB connection.
 
 | Item | Purpose |
 |---|---|
-| `MQTTClient` | MQTT 3.1.1 client (class, `TCPSocket` subclass) |
+| `MQTTClient` | MQTT 3.1.1 client (class, `SSLSocket` subclass) |
 | `ProtoReader`, `ProtoWriter` | Protobuf wire format (class / module) |
 | `Curve25519` | X25519 (module) |
 | `MeshDecode` | Packet decoding and summaries, names, `MeshSeenRecently` |
@@ -314,7 +314,7 @@ A typical run:
 
 - **TLS encrypts the connection but doesn't verify the broker's certificate.** Xojo's `SSLSocket` accepted a deliberately invalid certificate (self-signed.badssl.com) exactly like a valid one, and offers no way to check it. So TLS protects your password and traffic against eavesdropping, not against someone impersonating the broker. The app logs a note to that effect whenever TLS is on.
 - MQTT: outgoing publishes at QoS 0 or 1 (no QoS 2). QoS 1 is "at least once": after a reconnect the broker may receive a message twice, which Meshtastic nodes ignore as a duplicate packet id. Messages sent while disconnected aren't queued (`SEND failed: not connected`).
-- A QoS 1 confirmation only means the broker received the message. Confirmation from the destination node (Meshtastic `want_ack`) isn't implemented.
+- A QoS 1 confirmation only means the broker received the message. Whether the destination node got it comes from Meshtastic's own acknowledgement (`want_ack`, see [Sending into the mesh](#sending-into-the-mesh)), which only direct messages ask for.
 - PKI DMs can only be read when they're to or from the virtual node, since only its private key is known.
 - **Firmware 2.8 gateways don't upload PKI DMs to the virtual node.** The DM is relayed over LoRa, but never published to MQTT: 2.8 classifies a packet it can't decrypt as `OPAQUE_RELAY_ONLY` and relays it without handling it (`Router.cpp`, routing-auth verdict), so it never reaches the MQTT uplink. Firmware 2.7 uploaded these. Sending DMs to the mesh, and their delivery ACKs, are not affected.
 - JSON passthrough of text messages handles objects, arrays, numbers, `true`/`false`/`null`, but not a bare JSON string literal. A float inside such JSON that is smaller than about 0.01 with a full 53-bit mantissa falls back to Xojo's `ToString` instead of Python's exact formatting.
