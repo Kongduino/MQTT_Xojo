@@ -51,6 +51,7 @@ Repository: <https://github.com/Kongduino/MQTT_Xojo>
   - **Clear**, and **Save logs**: saves the log to a file you choose, named with the date and time, with a header giving the span it covers (since the window opened or the last Clear)
   - duplicate filtering and an optional hex dump
   - all settings in an external JSON file that stays out of the repository
+- **Direct connection to a node** (`MeshDeviceLink`): talks to a Meshtastic device over its client API, by **TCP** (port 4403, for nodes on WiFi or Ethernet) or **USB serial**, the protocol the Meshtastic apps and the Python CLI use. It asks the node for its configuration, keeps the connection open with a heartbeat, and passes on every packet the node delivers, already decrypted by the node. Each packet comes as a ServiceEnvelope, so `MeshPacketSummary` decodes it exactly like an MQTT message, JSON included. No MQTT broker is needed for this.
 - **Self-tests at startup:** AES-128/256-CTR, JSON float formatting, X25519 and AES-CCM.
 
 ## Requirements
@@ -186,6 +187,7 @@ Copy the files in `Library/` into your project (drag them into the Xojo navigato
 | `MeshChannels` | Channel table, PSK parsing, channel hash, channel decryption |
 | `MeshCrypto` | AES-CTR / CCM, PKI, key store, self-tests |
 | `MeshSend` | Downlink: envelopes, NodeInfo, JSON requests |
+| `MeshDeviceLink` | A node over TCP or USB serial, through its client API (class) |
 
 `MQTTClient` methods:
 - `SetCredentials(user, password)` and `SetTLS(enabled, connectionType)`
@@ -228,6 +230,34 @@ Sending:
 - For PKI, call `MeshSetPKIIdentity(nodeNum, privateKey)` and `MeshSetPublicKey(nodeNum, key)`.
 - `MeshCryptoSelfTest`, `MeshJSONSelfTest` and `MeshPKISelfTest` return a status line you can show at startup.
 
+### A node over TCP or USB (`MeshDeviceLink`)
+
+Methods:
+- `ConnectTCP(host, port)` (port 4403 by default) or `ConnectSerial(device As SerialDevice)` (115200 baud)
+- `Close`, which tells the node the client is leaving
+- `IsOpen`, `IsConfigured`, `MyNodeNum`, `MyNodeID`, `LongName` and `ShortName`
+
+Events:
+- `LinkOpened`, then `ConfigComplete` once the node has sent its configuration (its node number and names are known from then on)
+- `PacketReceived(envelope)`: every packet the node delivers, as a ServiceEnvelope for `MeshPacketSummary`
+- `LinkClosed(reason)`: a TCP or serial error, such as the node rebooting or leaving WiFi
+- `LogLine(text)`: the node's console text and log records
+
+The link is created in code, so its events are connected with `AddHandler`:
+
+```xojo
+mLink = New MeshDeviceLink
+AddHandler mLink.PacketReceived, WeakAddressOf LinkPacket   // Sub LinkPacket(sender As MeshDeviceLink, envelope As String)
+AddHandler mLink.LinkClosed, WeakAddressOf LinkClosed       // Sub LinkClosed(sender As MeshDeviceLink, reason As String)
+mLink.ConnectTCP("192.168.1.50")
+
+// in LinkPacket
+Dim jsonText, packetKey As String
+Dim summary As String = MeshPacketSummary(envelope, jsonText, packetKey)
+```
+
+A node has a single outgoing queue for all its clients, so two connections to the same node (an app and this link, or two links) share its packets between them. While the link has the USB port open, no other program can use it.
+
 ## Repository layout
 
 The project is in Xojo's text format: one file per class, module or window, so changes are easy to review and items are easy to reuse.
@@ -244,6 +274,7 @@ Library/                        the reusable library: copy these files into your
   MeshChannels.xojo_code          channel table, PSKs, channel hash, channel decryption
   MeshCrypto.xojo_code            AES-CTR / CCM, PKI, key store, self-tests
   MeshSend.xojo_code              downlink: envelopes, NodeInfo, ACKs, JSON requests
+  MeshDeviceLink.xojo_code        a node over TCP or USB serial (client API)
 Example App/                    the example desktop app
   Window1.xojo_window             the window, its MQTTClient1 instance and the buttons
   AppConfig.xojo_code             reads MQTT_Xojo.config.json

@@ -15,6 +15,7 @@ Module=Curve25519;Library/Curve25519.xojo_code;&h0000000009203015;&h0000000015CD
 Class=MQTTClient;Library/MQTTClient.xojo_code;&h000000007BA057FF;&h0000000015CD8FFF;false
 Class=ProtoReader;Library/ProtoReader.xojo_code;&h0000000045C9FA24;&h0000000015CD8FFF;false
 Module=ProtoWriter;Library/ProtoWriter.xojo_code;&h0000000017D37BCF;&h0000000015CD8FFF;false
+Class=MeshDeviceLink;Library/MeshDeviceLink.xojo_code;&h000000006D3E5FFF;&h0000000015CD8FFF;false
 Folder=Example App;Example App;&h00000000479F5FFF;&h0000000000000000;false
 Module=AppConfig;Example App/AppConfig.xojo_code;&h000000000A3E53AA;&h00000000479F5FFF;false
 Module=AppUtils;Example App/AppUtils.xojo_code;&h00000000104E07FF;&h00000000479F5FFF;false
