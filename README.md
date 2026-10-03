@@ -57,6 +57,7 @@ Repository: <https://github.com/Kongduino/MQTT_Xojo>
 ## Requirements
 
 - Xojo **2026r2.1** (desktop). It uses `Crypto.AESDecrypt` with `BlockModes.CTR`, `Crypto.SHA2_256`, `JSONItem`, `RegEx` and `DesktopWindow.AddControl`. Older releases may work if they have those.
+- The library (not the example app) also compiles for **Android** with Xojo 2026r2.1. See [On Android](#on-android).
 - An MQTT broker that your Meshtastic gateway(s) also use.
 - For the test tools (optional): Python 3 with the `meshtastic` package, `mosquitto_pub` / `mosquitto_sub`, `openssl`, and `cryptography` for the PKI checks.
 
@@ -229,6 +230,15 @@ Sending:
 - `MeshBuildEnvelope` and `MeshNodeInfoPayload` build packets directly.
 - For PKI, call `MeshSetPKIIdentity(nodeNum, privateKey)` and `MeshSetPublicKey(nodeNum, key)`.
 - `MeshCryptoSelfTest`, `MeshJSONSelfTest` and `MeshPKISelfTest` return a status line you can show at startup.
+
+### On Android
+
+The same `Library/` files work in a Xojo Android project; they're tested on a phone with MQTT, a node over TCP, and channel decryption. A few things differ:
+
+- **AES:** Android's `Crypto` module has no AES, so `MeshAESCTR` uses `MeshAESCTRXojo`, an AES-CTR written in plain Xojo. On desktop, `MeshCryptoSelfTest` also runs it against the same known answers and reports `Xojo AES OK`.
+- **No USB serial:** `MeshDeviceLink.ConnectSerial` exists only on desktop and console. Use `ConnectTCP`.
+- **Binary Strings:** on Android, a String built by concatenation is tagged UTF-8, and its byte functions (`Bytes`, `MiddleBytes`, `AscByte`, socket `Write`) then count each byte from 128 to 255 as two. The library keeps binary data tagged one byte per character with `MeshBin(s)`, and decodes UTF-8 bytes into text with `MeshUTF8Text(bytes)`. On desktop, `MeshBin` returns its argument unchanged, and `MeshUTF8Text` is `DefineEncoding(Encodings.UTF8)`.
+- **`MessageReceived` payload:** on Android it's the raw bytes, so `MeshPacketSummary(payload, …)` works directly. For a text or JSON payload, use `MeshUTF8Text(payload)`. If you build binary data yourself by concatenation, pass it through `MeshBin` before `Publish`.
 
 ### A node over TCP or USB (`MeshDeviceLink`)
 
