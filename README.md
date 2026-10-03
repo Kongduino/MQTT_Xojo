@@ -237,6 +237,7 @@ Methods:
 - `Close`, which tells the node the client is leaving
 - `IsOpen`, `IsConfigured`, `MyNodeNum`, `MyNodeID`, `LongName` and `ShortName`
 - `NodeCount`, `NodeNumAt(i)`, `NodeLongNameAt(i)` and `NodeShortNameAt(i)`: the nodes the device knows (its NodeDB, sent with its configuration)
+- `RequestPosition(toNode)`: asks a node for its GPS position through the device; the answer (a POSITION_APP packet) comes back through `PacketReceived`, or a ROUTING `NO_RESPONSE` when the node has no fix or doesn't share it
 - `RequestTelemetry(toNode, kind)`: asks a node for its telemetry through the device (`kind` 3 = environment, the default; 2 device, 4 air quality, 5 power) and returns the request's packet id. The answer is addressed to the device, which decrypts it and passes it on through `PacketReceived`; a node with nothing to send answers with a ROUTING `NO_RESPONSE` (see `MeshTakeRouting`)
 
 Events:
