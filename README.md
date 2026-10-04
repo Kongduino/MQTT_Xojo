@@ -225,6 +225,8 @@ If summary <> "" Then
 End If
 ```
 
+`MeshLastPacketRadio(hops, hopStart, relayNode, viaMQTT)`, called right after `MeshPacketSummary`, says how that packet reached the gateway (or the connected node): `hops` is 0 for a packet heard directly and −1 when unknown (firmware before 2.3), `relayNode` is the last byte of the node that transmitted it last: the relay, or the sender itself for a direct packet (0 when unknown; firmware 2.6+), and `viaMQTT` is True when the gateway got it from MQTT rather than by radio. The packet's RSSI / SNR describe the link to the sender only when `hops` is 0 and `viaMQTT` is False. These values stay out of the JSON, which remains identical to the converter's.
+
 Sending:
 - `MeshDownlink(topic, json, fromNode, gatewayID, outTopic, outPayload, info)` turns a JSON request into a packet to publish.
 - `MeshBuildEnvelope` and `MeshNodeInfoPayload` build packets directly.
