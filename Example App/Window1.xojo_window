@@ -88,7 +88,7 @@ Begin DesktopWindow Window1
       SSLConnecting   =   False
       SSLConnectionType=   5
       SSLEnabled      =   False
-      TabPanelIndex   =   "0"
+      TabPanelIndex   =   0
    End
    Begin DesktopButton btConnect
       AllowAutoDeactivate=   True
