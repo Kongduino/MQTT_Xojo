@@ -227,6 +227,8 @@ End If
 
 `MeshLastPacketRadio(hops, hopStart, relayNode, viaMQTT)`, called right after `MeshPacketSummary`, says how that packet reached the gateway (or the connected node): `hops` is 0 for a packet heard directly and −1 when unknown (firmware before 2.3), `relayNode` is the last byte of the node that transmitted it last: the relay, or the sender itself for a direct packet (0 when unknown; firmware 2.6+), and `viaMQTT` is True when the gateway got it from MQTT rather than by radio. The packet's RSSI / SNR describe the link to the sender only when `hops` is 0 and `viaMQTT` is False. These values stay out of the JSON, which remains identical to the converter's.
 
+`MeshLastPacketSignal(fromNode, packetID, rssi, snr)`, also called right after `MeshPacketSummary`, gives the packet's sender, id and reception (RSSI / SNR as the gateway or node reported them, 0 when absent). It works for packets that couldn't be decrypted too, so a packet can be matched by its id without its key.
+
 Sending:
 - `MeshDownlink(topic, json, fromNode, gatewayID, outTopic, outPayload, info)` turns a JSON request into a packet to publish.
 - `MeshBuildEnvelope` and `MeshNodeInfoPayload` build packets directly.
@@ -240,6 +242,8 @@ The same `Library/` files work in a Xojo Android project; they're tested on a ph
 - **AES:** Android's `Crypto` module has no AES, so `MeshAESCTR` uses `MeshAESCTRXojo`, an AES-CTR written in plain Xojo. On desktop, `MeshCryptoSelfTest` also runs it against the same known answers and reports `Xojo AES OK`.
 - **No USB serial:** `MeshDeviceLink.ConnectSerial` exists only on desktop and console. Use `ConnectTCP`.
 - **Binary Strings:** on Android, a String built by concatenation is tagged UTF-8, and its byte functions (`Bytes`, `MiddleBytes`, `AscByte`, socket `Write`) then count each byte from 128 to 255 as two. The library keeps binary data tagged one byte per character with `MeshBin(s)`, and decodes UTF-8 bytes into text with `MeshUTF8Text(bytes)`. On desktop, `MeshBin` returns its argument unchanged, and `MeshUTF8Text` is `DefineEncoding(Encodings.UTF8)`.
+- **ByRef:** in Xojo's translation to Kotlin, a ByRef parameter passed on to another method's ByRef parameter doesn't get the value back, without any error. The library always goes through a local variable (`MeshParsePSK` used to return an empty key, so no channel packet decrypted on Android); do the same in your own code.
+- **Node numbers above 2³¹:** a UInt32 from a packet is sign-extended when widened, so a node number read from a packet and the same one made from a hex string (`!aabbccdd`) can compare as different. Compare them as `Int64` values corrected to positive (add 2³² when negative), and print ids the same way.
 - **`MessageReceived` payload:** on Android it's the raw bytes, so `MeshPacketSummary(payload, …)` works directly. For a text or JSON payload, use `MeshUTF8Text(payload)`. If you build binary data yourself by concatenation, pass it through `MeshBin` before `Publish`.
 
 ### A node over TCP or USB (`MeshDeviceLink`)
@@ -250,6 +254,7 @@ Methods:
 - `IsOpen`, `IsConfigured`, `MyNodeNum`, `MyNodeID`, `LongName` and `ShortName`
 - `NodeCount`, `NodeNumAt(i)`, `NodeLongNameAt(i)` and `NodeShortNameAt(i)`: the nodes the device knows (its NodeDB, sent with its configuration)
 - `RequestPosition(toNode)`: asks a node for its GPS position through the device; the answer (a POSITION_APP packet) comes back through `PacketReceived`, or a ROUTING `NO_RESPONSE` when the node has no fix or doesn't share it
+- `SendText(text, channelIndex, hopLimit, toNode)`: a text message (TEXT_MESSAGE_APP) the node sends as itself, to everyone by default, without ACK; returns its packet id. With `hopLimit` 0 (the default) only nodes in direct range get it, which is what a range test needs. The firmware refuses texts sent too close together with a ROUTING NAK `RATE_LIMIT_EXCEEDED` (see `MeshTakeRouting`)
 - `RequestTelemetry(toNode, kind)`: asks a node for its telemetry through the device (`kind` 3 = environment, the default; 2 device, 4 air quality, 5 power) and returns the request's packet id. The answer is addressed to the device, which decrypts it and passes it on through `PacketReceived`; a node with nothing to send answers with a ROUTING `NO_RESPONSE` (see `MeshTakeRouting`)
 
 Events:
