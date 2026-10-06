@@ -189,6 +189,7 @@ Copy the files in `Library/` into your project (drag them into the Xojo navigato
 | `MeshCrypto` | AES-CTR / CCM, PKI, key store, self-tests |
 | `MeshSend` | Downlink: envelopes, NodeInfo, JSON requests |
 | `MeshDeviceLink` | A node over TCP or USB serial, through its client API (class) |
+| `USBSerial` | A USB serial port on Android, through usb-serial-for-android; used by `MeshDeviceLink.ConnectUSB` (class) |
 
 `MQTTClient` methods:
 - `SetCredentials(user, password)` and `SetTLS(enabled, connectionType)`
@@ -240,7 +241,7 @@ Sending:
 The same `Library/` files work in a Xojo Android project; they're tested on a phone with MQTT, a node over TCP, and channel decryption. A few things differ:
 
 - **AES:** Android's `Crypto` module has no AES, so `MeshAESCTR` uses `MeshAESCTRXojo`, an AES-CTR written in plain Xojo. On desktop, `MeshCryptoSelfTest` also runs it against the same known answers and reports `Xojo AES OK`.
-- **No USB serial:** `MeshDeviceLink.ConnectSerial` exists only on desktop and console. Use `ConnectTCP`.
+- **USB serial:** Android has no `SerialConnection`, so `MeshDeviceLink.ConnectSerial` exists only on desktop and console. On Android, `ConnectUSB(deviceName)` goes through `USBSerial`, built on [usb-serial-for-android](https://github.com/mik3y/usb-serial-for-android) (MIT; CDC-ACM boards such as nRF52, RP2040 and ESP32-S3, and CP210x, CH34x, FTDI and PL2303 chips). Add its Gradle dependency in Build Settings → Android → Dependencies: `com.github.mik3y:usb-serial-for-android:3.11.0`. Android asks the user to allow the device, again each time it's plugged in: `ConnectUSB` asks, reports it through `LinkClosed`, and the next `ConnectUSB` connects once allowed. `USBSerial` also works on its own for any USB serial device (`Devices`, `HasPermission`, `RequestPermission`, `Open`, `Write`, `DataAvailable`). On desktop it compiles but does nothing.
 - **Binary Strings:** on Android, a String built by concatenation is tagged UTF-8, and its byte functions (`Bytes`, `MiddleBytes`, `AscByte`, socket `Write`) then count each byte from 128 to 255 as two. The library keeps binary data tagged one byte per character with `MeshBin(s)`, and decodes UTF-8 bytes into text with `MeshUTF8Text(bytes)`. On desktop, `MeshBin` returns its argument unchanged, and `MeshUTF8Text` is `DefineEncoding(Encodings.UTF8)`.
 - **ByRef:** in Xojo's translation to Kotlin, a ByRef parameter passed on to another method's ByRef parameter doesn't get the value back, without any error. The library always goes through a local variable (`MeshParsePSK` used to return an empty key, so no channel packet decrypted on Android); do the same in your own code.
 - **Node numbers above 2³¹:** a UInt32 from a packet is sign-extended when widened, so a node number read from a packet and the same one made from a hex string (`!aabbccdd`) can compare as different. Compare them as `Int64` values corrected to positive (add 2³² when negative), and print ids the same way.
@@ -249,7 +250,7 @@ The same `Library/` files work in a Xojo Android project; they're tested on a ph
 ### A node over TCP or USB (`MeshDeviceLink`)
 
 Methods:
-- `ConnectTCP(host, port)` (port 4403 by default) or `ConnectSerial(device As SerialDevice)` (115200 baud)
+- `ConnectTCP(host, port)` (port 4403 by default), `ConnectSerial(device As SerialDevice)` (115200 baud; desktop and console) or `ConnectUSB(deviceName)` (Android, 115200 baud; "" for the first USB serial device; see On Android)
 - `Close`, which tells the node the client is leaving
 - `IsOpen`, `IsConfigured`, `MyNodeNum`, `MyNodeID`, `LongName` and `ShortName`
 - `NodeCount`, `NodeNumAt(i)`, `NodeLongNameAt(i)` and `NodeShortNameAt(i)`: the nodes the device knows (its NodeDB, sent with its configuration)
@@ -295,6 +296,7 @@ Library/                        the reusable library: copy these files into your
   MeshCrypto.xojo_code            AES-CTR / CCM, PKI, key store, self-tests
   MeshSend.xojo_code              downlink: envelopes, NodeInfo, ACKs, JSON requests
   MeshDeviceLink.xojo_code        a node over TCP or USB serial (client API)
+  USBSerial.xojo_code             a USB serial port on Android (usb-serial-for-android)
 Example App/                    the example desktop app
   Window1.xojo_window             the window, its MQTTClient1 instance and the buttons
   AppConfig.xojo_code             reads MQTT_Xojo.config.json
